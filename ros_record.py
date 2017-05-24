@@ -21,12 +21,12 @@ from sound_play.libsoundplay import SoundClient
 
 from pyaudio_utils import AudioPlayer, AudioRecorder
 
-CHIRP_FILE = '/home/spragunr/Dropbox/work/reu_2017/bats/chirp.wav'
+CHIRP_FILE = '/home/spragunr/echolocation/data/chirp.wav'
 
 class Recorder(object):
 
     CHIRP_RATE = 6 # in hz
-    RECORD_DURATION = 3 # in minutes
+    RECORD_DURATION = .06 # in seconds
     CHANNELS = 1
 
     def __init__(self, file_name):
@@ -58,7 +58,7 @@ class Recorder(object):
             
             self.soundhandle.playWave(CHIRP_FILE)
             #self.audio_player.play() # takes a while to actually play. (about .015 seconds)
-            self.audio_recorder.record(.06)
+            self.audio_recorder.record(self.RECORD_DURATION)
             while not self.audio_recorder.done_recording():
                 rospy.sleep(.005)
             audio = self.audio_recorder.get_data()
