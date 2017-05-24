@@ -9,11 +9,11 @@ May 2017
 """
 import matplotlib.pyplot as plt
 import numpy as np
-
+'''
 from keras.layers import Conv2D, Dense
 from keras.layers.core import Flatten
 from keras.models import Sequential
-from random import shuffle
+from random import shuffle'''
 from scipy import io, signal
 from sys import argv
 
@@ -90,13 +90,13 @@ def run_nn(training_set, target_set, summary=False):
 ######################################################
 
 def plot_data(y_data, predictions):
-    pts= 20 # number of data points to show
+    pts = 20 # number of data points to show
     indices = range(1, len(y_data)+1)
     plt.plot(indices[:pts], y_data[:pts], 'bs') 
     plt.plot(indices[:pts], predictions[:pts], 'g^')
     plt.xlabel("data point")
-    plt.ylabel("meters from wall")
-    plt.legend(["actual","predicted"])
+    plt.ylabel("millimeters from wall")
+    plt.legend(["true","predicted"])
     plt.show()
     
 ######################################################
@@ -124,4 +124,22 @@ def main():
     print "\nAverage Loss:", sum(losses)/runs
     print "\n","-"*30,"\n"," "*12,"DONE\n","-"*30
     
-main()
+#main()
+
+def check_data():
+    data = np.load(argv[1])
+    depth = data['depth']
+
+    print depth.shape	
+
+    shrunk = depth[35:175, 230:250, 310:330] # square wall space directly in front of mic
+    shrunk_reshaped = np.reshape(shrunk, (shrunk.shape[0],-1))
+    target_set = np.max(shrunk_reshaped, axis=1)
+    binary = np.zeros_like(target_set)
+    binary[target_set==0] = 1
+    print binary
+    print np.where(binary==1)
+    target_set = np.log(target_set) 
+    plot_data(target_set, np.zeros_like(target_set))
+
+check_data()
