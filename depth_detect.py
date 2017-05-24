@@ -19,11 +19,12 @@ from scipy import io, signal
 from sys import argv
 
 def preprocess_data(filename):
-"""
-@PURPOSE: Turn raw audio data into spectrograms and select target depths
-@PARAMS: filename - npz file of data 
-@RETURN: numpy array of spectrograms, numpy array of target depths
-"""
+    """
+    @PURPOSE: Turn raw audio data into spectrograms and select target depths
+    @PARAMS: filename - npz file of data 
+    @RETURN: numpy array of spectrograms, numpy array of target depths
+    """
+    
     data = np.load(filename)
     audio = data['audio']
     depth = data['depth']
@@ -45,13 +46,14 @@ def preprocess_data(filename):
 ######################################################
     
 def run_nn(training_set, target_set, summary=False):
-"""
-@PURPOSE: Train a neural network and use it to make predictions 
-@PARAMS: training_set - numpy array of spectrogram 
-         target_set - numpy array of target depths for training set
-         summary - boolean option to print neural network information
-@RETURN: mean squared error based on network performance using training and test sets 
-"""
+    """
+    @PURPOSE: Train a neural network and use it to make predictions 
+    @PARAMS: training_set - numpy array of spectrogram 
+             target_set - numpy array of target depths for training set
+             summary - boolean option to print neural network information
+    @RETURN: mean squared error based on network performance using training and test sets 
+    """
+    
     # Shuffle the training data 
     combined = zip(training_set, target_set)
     shuffle(combined)
@@ -96,12 +98,13 @@ def run_nn(training_set, target_set, summary=False):
 ######################################################
 
 def plot_data(y_data, predictions):
-"""
-@PURPOSE: display graph of expected depths vs. predicted depths for each data input
-@PARAMS: y_data - the true/expected depth values 
-         prediction - the predicted depth values given by the neural network
-@RETURN: None
-"""
+    """
+    @PURPOSE: display graph of expected depths vs. predicted depths for each data input
+    @PARAMS: y_data - the true/expected depth values 
+             prediction - the predicted depth values given by the neural network
+    @RETURN: None
+    """
+    
     pts = 20 # number of data points to show
     indices = range(1, len(y_data)+1)
     plt.plot(indices[:pts], y_data[:pts], 'bs') 
