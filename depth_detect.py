@@ -7,66 +7,72 @@ developed by Nhung Hoang
 
 May 2017
 """
+
 import matplotlib.pyplot as plt
 import numpy as np
-'''
+
 from keras.layers import Conv2D, Dense
 from keras.layers.core import Flatten
 from keras.models import Sequential
-from random import shuffle'''
+from random import shuffle
 from scipy import io, signal
 from sys import argv
 
-def preprocess_data():
-    data = np.load(argv[1])
+def preprocess_data(filename):
+"""
+@PURPOSE: Turn raw audio data into spectrograms and select target depths
+@PARAMS: filename - npz file of data 
+@RETURN: numpy array of spectrograms, numpy array of target depths
+"""
+    data = np.load(filename)
     audio = data['audio']
     depth = data['depth']
 
-    shrunk = depth[:, 230:250, 310:330] # square wall space directly in front of mic
-    shrunk_reshaped = np.reshape(shrunk, (1159,-1))
+    # Depth vectors become single depth value 
+    shrunk = depth[:, 230:250, 310:330] # square wall space directly in front of apparatus
+    shrunk_reshaped = np.reshape(shrunk, (shrunk.shape[0],-1))
     target_set = np.max(shrunk_reshaped, axis=1)
     target_set = np.log(target_set) 
 
     # Turn audio data into spectrograms
-    training_set = np.empty((1159, 129, 11)) # (129, 11) shape of 1159 spectrograms
+    input_set = np.empty((audio.shape[0], 129, 11)) # (129, 11) shape of spectrograms
     for i in range(audio.shape[0]):
         freq, time, spectro = signal.spectrogram(audio[i,:])
-        training_set[i] = spectro
-    training_set = np.log(training_set)/20
-    return training_set, target_set
+        input_set[i] = spectro
+    input_set = np.log(input_set)/20
+    return input_set, target_set
 
 ######################################################
     
 def run_nn(training_set, target_set, summary=False):
- 
-    # Shuffle the data 
+"""
+@PURPOSE: Train a neural network and use it to make predictions 
+@PARAMS: training_set - numpy array of spectrogram 
+         target_set - numpy array of target depths for training set
+         summary - boolean option to print neural network information
+@RETURN: mean squared error based on network performance using training and test sets 
+"""
+    # Shuffle the training data 
     combined = zip(training_set, target_set)
     shuffle(combined)
     training_set, target_set = zip(*combined)
     training_set = np.asarray(training_set)
     target_set = np.asarray(target_set)
-    
-    '''
-    # Show plots
-    print "MIN:",np.min(training_set)
-    print "MAX:",np.max(training_set)
-    plt.hist(training_set.flatten(), 1000)
-    plt.show()
-    
-    plt.pcolormesh(time, freq, spectro)
-    plt.ylabel('Frequency [Hz]')
-    plt.xlabel('Time [sec]')
-    plt.show()
-    '''
 
-    # Using these sets for now
-    in_train = training_set[:928]
-    in_train = np.reshape(in_train, (928,129,11,1))
-    out_train = target_set[:928]
-    in_test = training_set[928:]
-    in_test = np.reshape(in_test, (231,129,11,1))
-    out_test = target_set[928:]
+    # Get data sets
+    in_train = training_set
+    in_train = np.reshape(in_train, (in_train.shape[0],129,11,1))
+    out_train = target_set
+    in_test, out_test = preprocess_data(argv[2])
+    in_test = np.reshape(in_test, (in_test.shape[0],129,11,1))
 
+    # Shuffle the test data 
+    combined = zip(in_test, out_test)
+    shuffle(combined)
+    in_test, out_test = zip(*combined)
+    in_test = np.asarray(in_test)
+    out_test = np.asarray(out_test)
+    
     # Build neural net
     net = Sequential()
     INPUT_SHAPE = in_train.shape[1:]
@@ -90,6 +96,12 @@ def run_nn(training_set, target_set, summary=False):
 ######################################################
 
 def plot_data(y_data, predictions):
+"""
+@PURPOSE: display graph of expected depths vs. predicted depths for each data input
+@PARAMS: y_data - the true/expected depth values 
+         prediction - the predicted depth values given by the neural network
+@RETURN: None
+"""
     pts = 20 # number of data points to show
     indices = range(1, len(y_data)+1)
     plt.plot(indices[:pts], y_data[:pts], 'bs') 
@@ -102,11 +114,11 @@ def plot_data(y_data, predictions):
 ######################################################
     
 def main():
-    if len(argv) != 2:
-        print "\nusage: depth_detect.py npz_file\n"
+    if len(argv) != 3:
+        print "\nusage: depth_detect.py training_data(npz_file) test_data(npz_file)\n"
         return
 
-    training_set, target_set = preprocess_data()
+    training_set, target_set = preprocess_data(argv[1])
     
     losses = []
     runs = 1
@@ -124,7 +136,7 @@ def main():
     print "\nAverage Loss:", sum(losses)/runs
     print "\n","-"*30,"\n"," "*12,"DONE\n","-"*30
     
-#main()
+main()
 
 def check_data():
     data = np.load(argv[1])
@@ -132,14 +144,14 @@ def check_data():
 
     print depth.shape	
 
-    shrunk = depth[35:175, 230:250, 310:330] # square wall space directly in front of mic
+    shrunk = depth[:, 230:250, 310:330] 
     shrunk_reshaped = np.reshape(shrunk, (shrunk.shape[0],-1))
     target_set = np.max(shrunk_reshaped, axis=1)
     binary = np.zeros_like(target_set)
     binary[target_set==0] = 1
     print binary
     print np.where(binary==1)
-    target_set = np.log(target_set) 
-    plot_data(target_set, np.zeros_like(target_set))
+    target_set = np.log(target_set)
+    #plot_data(target_set, np.zeros_like(target_set))
 
-check_data()
+#check_data()
