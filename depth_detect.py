@@ -99,9 +99,6 @@ def plot_data(y_data, predictions):
     plt.legend(["actual","predicted"])
     plt.show()
     
-    
-    
-
 ######################################################
     
 def main():
