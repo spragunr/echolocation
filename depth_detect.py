@@ -10,10 +10,11 @@ May 2017
 
 import matplotlib.pyplot as plt
 import numpy as np
+import os.path
 
 from keras.layers import Conv2D, Dense
 from keras.layers.core import Flatten
-from keras.models import Sequential
+from keras.models import load_model, Sequential
 from random import shuffle
 from scipy import io, signal
 from sys import argv
@@ -42,40 +43,20 @@ def preprocess_data(filename):
         freq, time, spectro = signal.spectrogram(audio[i,:])
         input_set[i] = spectro
     input_set = np.log(input_set)/20
+    
+    # Shuffle the data 
+    combined = zip(input_set, target_set)
+    shuffle(combined)
+    input_set, target_set = zip(*combined)
+    input_set = np.asarray(input_set)
+    target_set = np.asarray(target_set)
+
     return input_set, target_set
 
 ######################################################
     
-def run_nn(training_set, target_set, summary=False):
-    """
-    @PURPOSE: Train a neural network and use it to make predictions 
-    @PARAMS: training_set - numpy array of spectrogram 
-             target_set - numpy array of target depths for training set
-             summary - boolean option to print neural network information
-    @RETURN: mean squared error based on network performance using training and test sets 
-    """
-    
-    # Shuffle the training data 
-    combined = zip(training_set, target_set)
-    shuffle(combined)
-    training_set, target_set = zip(*combined)
-    training_set = np.asarray(training_set)
-    target_set = np.asarray(target_set)
+def get_model(in_train, out_train):
 
-    # Get data sets
-    in_train = training_set
-    in_train = np.reshape(in_train, (in_train.shape[0],129,11,1))
-    out_train = target_set
-    in_test, out_test = preprocess_data(argv[2])
-    in_test = np.reshape(in_test, (in_test.shape[0],129,11,1))
-
-    # Shuffle the test data 
-    combined = zip(in_test, out_test)
-    shuffle(combined)
-    in_test, out_test = zip(*combined)
-    in_test = np.asarray(in_test)
-    out_test = np.asarray(out_test)
-    
     # Build neural net
     net = Sequential()
     INPUT_SHAPE = in_train.shape[1:]
@@ -85,6 +66,20 @@ def run_nn(training_set, target_set, summary=False):
     net.add(Dense(1, activation='linear'))
     net.compile(optimizer='adam', loss='mean_squared_error')
     net.fit(in_train, out_train, validation_split=0.2, epochs=50)
+    net.save("depth_model.h5")
+    return load_model("depth_model.h5")
+
+######################################################
+
+def run_nn(net, in_test, out_test, summary=False):
+    """
+    @PURPOSE: Train a neural network and use it to make predictions 
+    @PARAMS: training_set - numpy array of spectrogram 
+             target_set - numpy array of target depths for training set
+             summary - boolean option to print neural network information
+    @RETURN: mean squared error based on network performance using training and test sets 
+    """
+    
     loss = net.evaluate(in_test, out_test)
     scale_loss = np.exp(loss)
 
@@ -108,6 +103,7 @@ def plot_data(y_data, predictions):
     
     pts = 30 # number of data points to show
     indices = range(1, len(y_data)+1)
+    plt.figure(1)
     plt.plot(indices[:pts], y_data[:pts], 'bs') 
     plt.plot(indices[:pts], predictions[:pts], 'g^')
     plt.xlabel("data point")
@@ -115,6 +111,12 @@ def plot_data(y_data, predictions):
     plt.legend(["true","predicted"])
     plt.show()
     
+    plt.figure(2)
+    plt.plot(y_data[:pts], predictions[:pts], 'ro')
+    plt.xlabel("true")
+    plt.ylabel("predicted")
+    plt.show()
+
 ######################################################
     
 def main():
@@ -122,15 +124,24 @@ def main():
         print "\nusage: depth_detect.py training_data(npz_file) test_data(npz_file)\n"
         return
 
-    training_set, target_set = preprocess_data(argv[1])
-    
+    # Get data sets
+    in_train, out_train = preprocess_data(argv[1])
+    in_train = np.reshape(in_train, (in_train.shape[0],129,11,1))
+    in_test, out_test = preprocess_data(argv[2])
+    in_test = np.reshape(in_test, (in_test.shape[0],129,11,1))
+ 
+    if not os.path.isfile("depth_model.h5"):
+	net = get_model(in_train, out_train)
+    else:
+	net = load_model("depth_model.h5")
+
     losses = []
     runs = 1
     for i in range(runs):
         if i == runs-1:
-            loss = run_nn(training_set, target_set, summary=True)
+            loss = run_nn(net, in_test, out_test, summary=True)
         else:
-            loss = run_nn(training_set, target_set)
+            loss = run_nn(net, in_test, out_test)
         print "\n"
         losses.append(loss)
 
