@@ -84,12 +84,12 @@ def run_nn(training_set, target_set, summary=False):
     net.add(Dense(450, activation='relu'))
     net.add(Dense(1, activation='linear'))
     net.compile(optimizer='adam', loss='mean_squared_error')
-    net.fit(in_train, out_train, validation_split=0.2, epochs=15)
+    net.fit(in_train, out_train, validation_split=0.2, epochs=50)
     loss = net.evaluate(in_test, out_test)
     scale_loss = np.exp(loss)
 
     predictions = net.predict(in_test)
-    plot_data(out_test, predictions)
+    plot_data(np.exp(out_test), np.exp(predictions))
     
     if summary:
         print "\n"
