@@ -33,6 +33,7 @@ def preprocess_data(filename):
     shrunk = depth[:, 230:250, 310:330] # square wall space directly in front of apparatus
     shrunk_reshaped = np.reshape(shrunk, (shrunk.shape[0],-1))
     target_set = np.max(shrunk_reshaped, axis=1)
+    target_set = target_set[np.where(target_set!=0)]
     target_set = np.log(target_set) 
 
     # Turn audio data into spectrograms
@@ -105,7 +106,7 @@ def plot_data(y_data, predictions):
     @RETURN: None
     """
     
-    pts = 20 # number of data points to show
+    pts = 30 # number of data points to show
     indices = range(1, len(y_data)+1)
     plt.plot(indices[:pts], y_data[:pts], 'bs') 
     plt.plot(indices[:pts], predictions[:pts], 'g^')
@@ -141,20 +142,17 @@ def main():
     
 main()
 
+######################################################
+######################################################
+
 def check_data():
     data = np.load(argv[1])
     depth = data['depth']
-
     print depth.shape	
-
     shrunk = depth[:, 230:250, 310:330] 
     shrunk_reshaped = np.reshape(shrunk, (shrunk.shape[0],-1))
     target_set = np.max(shrunk_reshaped, axis=1)
-    binary = np.zeros_like(target_set)
-    binary[target_set==0] = 1
-    print binary
-    print np.where(binary==1)
+    target_set = target_set[np.where(target_set!=0)]
     target_set = np.log(target_set)
-    #plot_data(target_set, np.zeros_like(target_set))
-
+    plot_data(target_set, np.zeros_like(target_set))
 #check_data()
