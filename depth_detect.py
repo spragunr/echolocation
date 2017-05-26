@@ -101,11 +101,12 @@ def plot_data(y_data, predictions):
     @RETURN: None
     """
     
-    pts = 30 # number of data points to show
+    pts = 20 # number of data points to show
     indices = range(1, len(y_data)+1)
     plt.figure(1)
     plt.plot(indices[:pts], y_data[:pts], 'bs') 
     plt.plot(indices[:pts], predictions[:pts], 'g^')
+    plt.title("True and Predicted Depth Values")
     plt.xlabel("data point")
     plt.ylabel("millimeters from wall")
     plt.legend(["true","predicted"])
@@ -113,8 +114,9 @@ def plot_data(y_data, predictions):
     
     plt.figure(2)
     plt.plot(y_data[:pts], predictions[:pts], 'ro')
-    plt.xlabel("true")
-    plt.ylabel("predicted")
+    plt.title("True vs. Predicted Depth Values")
+    plt.xlabel("true (mm)")
+    plt.ylabel("predicted (mm)")
     plt.show()
 
 ######################################################
