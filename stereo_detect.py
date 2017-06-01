@@ -95,13 +95,18 @@ def preprocess_data():
 	depth = data['depth'] # shape: 13274, 12, 16
 
 	depth_reshaped = np.reshape(depth, (depth.shape[0],-1)) # shape: 13274, 192
-	valid_bool = np.all(depth_reshaped, axis=1) # finds samples not containing zeros
+	'''valid_bool = np.all(depth_reshaped, axis=1) # finds samples not containing zeros
 	valid_depth = depth_reshaped[valid_bool] # keep samples not containing zero
 	# valid_depth shape: 10291, 192 (22% loss)
 	
-	new_audio = audio[valid_bool]
+	new_audio = audio[valid_bool]'''
+
+	# for mse trick
+	valid_depth = depth_reshaped
+	new_audio = audio
 
 	if os.path.isfile('input_spectrograms.npy'):
+		print "fetching spectrogram array..."
 		input_set = np.load(path+'/input_spectrograms.npy')
 	else: 
 		print "creating spectrogram set 0" 
@@ -123,107 +128,67 @@ def preprocess_data():
 		np.save('input_spectrograms.npy', input_set)
 		print "array of spectrograms saved as 'input_spectrograms.npy'"
 	
+	print "finished preprocessing\n"
 	return input_set, valid_depth
 
 ######################################################
 
 def split_data(x, y):
-
-	'''
-	xshape = x.shape[0]
-	xbool = np.zeros_like(x, dtype=bool)
-	ybool = np.zeros_like(y, dtype=bool)
-	A = int((0.8/14)*xshape)
-	B = int((1.6/14)*xshape)
-	C = int((12.8/14)*xshape)
-	sss = subset_size = int(xshape/7)
-	tss = test_set_size = int((0.2*xshape)/7)
-
-	xbool[A:tss] = True 
-	xbool[sss+A:sss+A+tss] = True
-	xbool[2*sss+A:2*sss+A+tss] =True 
-	xbool[3*sss+A:3*sss+A+tss] =True 
-	xbool[4*sss+A:4*sss+A+tss] =True 
-	xbool[5*sss+A:5*sss+A+tss] =True 
-	xbool[6*sss+A:6*sss+A+tss] =True 
-
-	ybool[A:tss] = True 
-	ybool[sss+A:sss+A+tss] = True
-	ybool[2*sss+A:2*sss+A+tss] =True 
-	ybool[3*sss+A:3*sss+A+tss] =True 
-	ybool[4*sss+A:4*sss+A+tss] =True 
-	ybool[5*sss+A:5*sss+A+tss] =True 
-	ybool[6*sss+A:6*sss+A+tss] =True 
-
-	xtest = x[xbool]
-	ytest = y[ybool]
-	xtrain = x[np.logical_not(xbool)]
-	ytrain = y[np.logical_not(ybool)]
-	'''
-  
-	'''# Shuffle the data 
-	combined = zip(input_set, target)
-	shuffle(combined)
-	input_set, target = zip(*combined)
-	input_set = np.asarray(input_set)
-	target = np.asarray(target)
-
-	length = int(input_set.shape[0]*0.8)
-	xtrain = input_set[:length]
-	ytrain = target[:length]
-	xtest = input_set[length:]
-	ytest = target[length:]'''
-
+	if os.path.isfile('model_sets.npz'):
+		sets = np.load('model_sets.npz')
+		xtrain = sets['xtrain']
+		ytrain = sets['ytrain']
+		xtest = sets['xtest']
+		ytest = sets['ytest']
+	else:
+		xshape = x.shape[0]
+		xbool = np.zeros_like(x, dtype=bool)
+		ybool = np.zeros_like(y, dtype=bool)
+		subset_size = int(xshape/7)
+		half_test_size = int((xshape*0.2)/14)
 	
-	xshape = x.shape[0]
-	xbool = np.zeros_like(x, dtype=bool)
-	ybool = np.zeros_like(y, dtype=bool)
-	subset_size = int(xshape/7)
-	half_test_size = int((xshape*0.2)/14)
-	
-	for i in range(7):
-		print "creating bool array for subset",i
-		start_index = subset_size*i
-		end_index = start_index + subset_size
-		mid_index = int((0.5*(end_index-start_index)) + start_index) 
-		test_start = mid_index-half_test_size
-		test_end = mid_index+half_test_size 
-		xbool[test_start:test_end] = True
-		ybool[test_start:test_end] = True 
+		for i in range(7):
+			print "creating bool array for subset",i
+			start_index = subset_size*i
+			end_index = start_index + subset_size
+			mid_index = int((0.5*(end_index-start_index)) + start_index) 
+			test_start = mid_index-half_test_size
+			test_end = mid_index+half_test_size 
+			xbool[test_start:test_end] = True
+			ybool[test_start:test_end] = True 
 
-	# ISSUE: these are all 1D arrays, can't reshape because unknown first dim
-	# hardcoded reshapes for quick fix now 
-	print "reshaping test vectors..."
-	xtest = x[xbool].reshape((2058,129,385,2))
-	ytest = y[ybool].reshape((2058,192))
-	print "reshaping training vectors..."
-	xtrain = x[np.logical_not(xbool)].reshape((8233,129,385,2))
-	ytrain = y[np.logical_not(ybool)].reshape((8233,192))
-
-	'''print "x_all", x.shape 
-	print "y_all", y.shape
-	print "x_train", xtrain.shape
-	print "y_train", ytrain.shape
-	print "x_test", xtest.shape
-	print "y_test", ytest.shape'''
-
+		print "reshaping test vectors..."
+		xtest = x[xbool].reshape((-1,129,385,2))
+		ytest = y[ybool].reshape((-1,192))
+		print "reshaping training vectors..."
+		xtrain = x[np.logical_not(xbool)].reshape((-1,129,385,2))
+		ytrain = y[np.logical_not(ybool)].reshape((-1,192))
+		print "saving data sets..."
+		np.savez('model_sets.npz', 
+							xtrain=xtrain,
+							ytrain=ytrain,
+							xtest=xtest,
+							ytest=ytest)
+		print "training and test sets saved as 'model_sets.npz'"
+															
 	return xtrain, ytrain, xtest, ytest
 
 ######################################################
 
 def build_model(x_train, y_train):
 	net = Sequential()
-	INPUT_SHAPE = x_train.shape[1:]
-	net.add(Conv2D(64, (5,5), 
+	net.add(Conv2D(8, (5,5), 
+			batch_size=32,
 			strides=(1,1), 
 			activation='relu',
 			data_format='channels_last',
-			input_shape=INPUT_SHAPE))
+			input_shape=x_train.shape[1:]))
 	net.add(Flatten())
-	net.add(Dense(450, activation='relu'))
+	net.add(Dense(30, activation='relu'))
 	net.add(Dense(192, activation='linear'))
-	net.compile(optimizer='adam', loss='mean_squared_error')
-	net.fit(x_train, y_train, validation_split=0.2, epochs=50)
+	net.compile(optimizer='adam', loss=mse_ignore_nan2(y_true, y_pred))
+	print "finished compiling"
+	net.fit(x_train, y_train, validation_split=0.2, epochs=50, batch_size=32)
 	net.save('stereo_model.h5')
 	print "model saved as 'stereo_model.h5'"
 	return load_model('stereo_model.h5')
@@ -251,14 +216,14 @@ def mse_ignore_nan2(y_true, y_pred):
 
 #####################################################
 
-def  main():
+def main():
 	while not os.path.isfile('all.npz'):
 		get_data()
 	input_set, target = preprocess_data()
 	x_train, y_train, x_test, y_test = split_data(input_set, target)
 	if not os.path.isfile('stereo_model.h5'):
 		print "building model..."
-		model = build_model(x_train, y_train)
+		model = build_model(x_train[:10], y_train[:10])
 	else: 
 		model = load_model('stereo_model.h5')
 #	loss = run_model(model, x_test, y_test)	
