@@ -4,9 +4,14 @@ stereo version
 
 import matplotlib.pyplot as plt
 import numpy as np
+import os 
 import os.path
+import tensorflow as tf
 
 from random import shuffle
+from keras.layers import Conv2D, Dense
+from keras.layers.core import Flatten
+from keras.models import load_model, Sequential
 from scipy import io, signal
 from sys import argv
 
@@ -31,20 +36,21 @@ def downsize(img):
 ######################################################
 
 def get_data():
+	path = os.getcwd() 
 	print "loading 'forensics' data..."
-	d1 = np.load('/home/hoangnt/echolocation/data_stereo/forensics.npz')
+	d1 = np.load(path+'/data_stereo/forensics.npz')
 	print "loading 'isat243' data..."
-	d2 = np.load('/home/hoangnt/echolocation/data_stereo/isat243.npz')
+	d2 = np.load(path+'/data_stereo/isat243.npz')
 	print "loading 'isat246' data..."
-	d3 = np.load('/home/hoangnt/echolocation/data_stereo/isat246.npz')
+	d3 = np.load(path+'/data_stereo/isat246.npz')
 	print "loading 'isat248' data..."
-	d4 = np.load('/home/hoangnt/echolocation/data_stereo/isat248.npz')
+	d4 = np.load(path+'/data_stereo/isat248.npz')
 	print "loading 'office' data..."
-	d5 = np.load('/home/hoangnt/echolocation/data_stereo/office.npz')
+	d5 = np.load(path+'/data_stereo/office.npz')
 	print "loading 'stairwell' data..."
-	d6 = np.load('/home/hoangnt/echolocation/data_stereo/stairwell.npz')
+	d6 = np.load(path+'/data_stereo/stairwell.npz')
 	print "loading 'spine' data..."
-	d7 = np.load('/home/hoangnt/echolocation/data_stereo/spine.npz')
+	d7 = np.load(path+'/data_stereo/spine.npz')
 	print "---------------------------------"
 	print "All data have been loaded.\n"
 
@@ -82,7 +88,9 @@ def get_data():
 ######################################################
 
 def preprocess_data():
-	data = np.load('/home/hoangnt/echolocation/all.npz')
+	print "preprocessing data..."
+	path = os.getcwd()
+	data = np.load(path+'/all.npz')
 	audio = data['audio']
 	depth = data['depth'] # shape: 13274, 12, 16
 
@@ -93,20 +101,23 @@ def preprocess_data():
 #	print "\n\nVALID DEPTH SHAPE:",valid_depth.shape,"\n\n"
 	
 	new_audio = audio[valid_bool]
+	print "creating spectrogram set 0" 
 	freq1, time1, spectro1 = signal.spectrogram(new_audio[0,:,0], noverlap=250)
 	freq2, time2, spectro2 = signal.spectrogram(new_audio[0,:,1], noverlap=250)
-	input_set = np.empty((new_audio.shape[0], spectro1.shape[0], spectro1.shape[1], 2))
+	dims = spectro1.shape
+	input_set = np.empty((new_audio.shape[0], dims[0], dims[1], 2))
 	input_set[0,:,:,0] = spectro1
 	input_set[0,:,:,1] = spectro2
-	'''
+	
 	for i in range(1,new_audio.shape[0]):
+		print "creating spectrogram set", i
 		freq1, time1, spectro1 = signal.spectrogram(new_audio[i,:,0], noverlap=250)
 		freq2, time2, spectro2 = signal.spectrogram(new_audio[i,:,1], noverlap=250)
 		input_set[i,:,:,0] = spectro1
 		input_set[i,:,:,1] = spectro2
 #		plt.pcolormesh(spectro2)
 #	plt.show()
-	'''
+	
 	return input_set, valid_depth
 
 ######################################################
@@ -166,6 +177,7 @@ def split_data(x, y):
 	half_test_size = int((xshape*0.2)/14)
 	
 	for i in range(7):
+		print "creating bool array for subset",i
 		start_index = subset_size*i
 		end_index = start_index + subset_size
 		mid_index = int((0.5*(end_index-start_index)) + start_index) 
@@ -176,54 +188,74 @@ def split_data(x, y):
 
 	# ISSUE: these are all 1D arrays, can't reshape because unknown first dim
 	# hardcoded reshapes for quick fix now 
+	print "reshaping test vectors..."
 	xtest = x[xbool].reshape((2058,129,385,2))
 	ytest = y[ybool].reshape((2058,192))
+	print "reshaping training vectors..."
 	xtrain = x[np.logical_not(xbool)].reshape((8233,129,385,2))
 	ytrain = y[np.logical_not(ybool)].reshape((8233,192))
 
-	print "x_all", input_set.shape 
-	print "y_all", target.shape
-	print "x_train", x_train.shape
-	print "y_train", y_train.shape
-	print "x_test", x_test.shape
-	print "y_test", y_test.shape
+	'''print "x_all", x.shape 
+	print "y_all", y.shape
+	print "x_train", xtrain.shape
+	print "y_train", ytrain.shape
+	print "x_test", xtest.shape
+	print "y_test", ytest.shape'''
 
-	return load_model("depth_model.h5")
+	return xtrain, ytrain, xtest, ytest
 
 ######################################################
 
 def build_model(x_train, y_train):
 	net = Sequential()
 	INPUT_SHAPE = x_train.shape[1:]
-	net.add(Conv2D(64, (5, 5), strides=(1,1), activation='relu', input_shape=INPUT_SHAPE))
+	net.add(Conv2D(64, (5,5), 
+			strides=(1,1), 
+			activation='relu',
+			data_format='channels_last',
+			input_shape=INPUT_SHAPE))
 	net.add(Flatten())
 	net.add(Dense(450, activation='relu'))
-	net.add(Dense(1, activation='linear'))
+	net.add(Dense(192, activation='linear'))
 	net.compile(optimizer='adam', loss='mean_squared_error')
 	net.fit(x_train, y_train, validation_split=0.2, epochs=50)
-	net.save("stereo_model.h5")
-	return load_model("stereo_model.h5")
+	net.save('stereo_model.h5')
+	print "model saved as 'stereo_model.h5'"
+	return load_model('stereo_model.h5')
 
 ######################################################
 
 def run_model(net, x_test, y_test):
-	loss = net.evaluate(x_test, y_test)
+#	loss = net.evaluate(x_test, y_test)
 #	scale_loss = np.exp(loss)
 	predictions = net.predict(x_test)
 #	plot_data(np.exp(y_test), np.exp(predictions))
+	loss = mse_ignore_nan2(y_test, predictions)
 	return loss #scale_loss
 
-######################################################
+#####################################################
 
-def main():
+def mse_ignore_nan2(y_true, y_pred):
+    ok_entries = tf.logical_not(tf.is_nan(y_true))
+    safe_targets = tf.where(ok_entries, y_true, y_pred)
+    sqr = tf.square(y_pred - safe_targets)
+    zero_nans = tf.cast(ok_entries, K.floatx())
+    num_ok = tf.reduce_sum(zero_nans, axis=-1) # count OK entries
+    num_ok = tf.maximum(num_ok, tf.ones_like(num_ok)) # avoid divide by zero
+    return tf.reduce_sum(sqr, axis=-1) / num_ok
+
+#####################################################
+
+def  main():
 	while not os.path.isfile('all.npz'):
 		get_data()
 	input_set, target = preprocess_data()
 	x_train, y_train, x_test, y_test = split_data(input_set, target)
-	if not os.path.isfile("stereo_model.h5"):
-      model = build_model(x_train, y_train)
-    else: 
-      model = load_model("stereo_model.h5")
+	if not os.path.isfile('stereo_model.h5'):
+		print "building model..."
+		model = build_model(x_train, y_train)
+	else: 
+		model = load_model('stereo_model.h5')
 #	loss = run_model(model, x_test, y_test)	
 
 main()
