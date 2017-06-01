@@ -95,28 +95,33 @@ def preprocess_data():
 	depth = data['depth'] # shape: 13274, 12, 16
 
 	depth_reshaped = np.reshape(depth, (depth.shape[0],-1)) # shape: 13274, 192
-	valid_bool = np.all(depth_reshaped, axis=1)
-	valid_depth = depth_reshaped[valid_bool] # removes samples containing zero
+	valid_bool = np.all(depth_reshaped, axis=1) # finds samples not containing zeros
+	valid_depth = depth_reshaped[valid_bool] # keep samples not containing zero
 	# valid_depth shape: 10291, 192 (22% loss)
-#	print "\n\nVALID DEPTH SHAPE:",valid_depth.shape,"\n\n"
 	
 	new_audio = audio[valid_bool]
-	print "creating spectrogram set 0" 
-	freq1, time1, spectro1 = signal.spectrogram(new_audio[0,:,0], noverlap=250)
-	freq2, time2, spectro2 = signal.spectrogram(new_audio[0,:,1], noverlap=250)
-	dims = spectro1.shape
-	input_set = np.empty((new_audio.shape[0], dims[0], dims[1], 2))
-	input_set[0,:,:,0] = spectro1
-	input_set[0,:,:,1] = spectro2
+
+	if os.path.isfile('input_spectrograms.npy'):
+		input_set = np.load(path+'/input_spectrograms.npy')
+	else: 
+		print "creating spectrogram set 0" 
+		freq1, time1, spectro1 = signal.spectrogram(new_audio[0,:,0], noverlap=250)
+		freq2, time2, spectro2 = signal.spectrogram(new_audio[0,:,1], noverlap=250)
+		dims = spectro1.shape
+		input_set = np.empty((new_audio.shape[0], dims[0], dims[1], 2))
+		input_set[0,:,:,0] = spectro1
+		input_set[0,:,:,1] = spectro2
 	
-	for i in range(1,new_audio.shape[0]):
-		print "creating spectrogram set", i
-		freq1, time1, spectro1 = signal.spectrogram(new_audio[i,:,0], noverlap=250)
-		freq2, time2, spectro2 = signal.spectrogram(new_audio[i,:,1], noverlap=250)
-		input_set[i,:,:,0] = spectro1
-		input_set[i,:,:,1] = spectro2
-#		plt.pcolormesh(spectro2)
-#	plt.show()
+		for i in range(1,new_audio.shape[0]):
+			print "creating spectrogram set", i
+			freq1, time1, spectro1 = signal.spectrogram(new_audio[i,:,0], noverlap=250)
+			freq2, time2, spectro2 = signal.spectrogram(new_audio[i,:,1], noverlap=250)
+			input_set[i,:,:,0] = spectro1
+			input_set[i,:,:,1] = spectro2
+#			plt.pcolormesh(spectro2)
+#		plt.show()
+		np.save('input_spectrograms.npy', input_set)
+		print "array of spectrograms saved as 'input_spectrograms.npy'"
 	
 	return input_set, valid_depth
 
