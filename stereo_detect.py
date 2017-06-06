@@ -2,6 +2,7 @@
 stereo version
 """
 
+import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 import os 
@@ -9,12 +10,14 @@ import os.path
 import tensorflow as tf
 
 from random import shuffle
+from keras.backend import floatx
 from keras.layers import Conv2D, Dense
 from keras.layers.core import Flatten
 from keras.models import load_model, Sequential
 from scipy import io, signal
 from sys import argv
 
+import time
 ######################################################
 
 def downsize(img):
@@ -75,21 +78,31 @@ def get_data():
 	print "concatenating audio data..."
 	audio = np.concatenate((audio1,audio2,audio3,audio4,audio5,audio6,audio7))
 	print "concatenating depth data...\n"
+	start = time.time()
 	depth = np.concatenate((depth1,depth2,depth3,depth4,depth5,depth6,depth7))
 	new_depth = np.empty((depth.shape[0],12,16))
-	np.savez('all_orig', audio=audio, depth=depth)
-	print "concatenated audio and depth data saved as 'all_orig.npz'\n"
+#	np.savez('all_orig', audio=audio, depth=depth)
+#	print "concatenated audio and depth data saved as 'all_orig.npz'\n"
 	print "downsizing depth data..."
 	for i in range(depth.shape[0]):
 		new_depth[i] = downsize(depth[i])
-	np.savez('all', audio=audio, depth=new_depth)
-	print "concatenated audio and downsized depth data saved as 'all.npz'\n"
+	end = time.time()
+	print "time", end-start
+	return 
+	print "saving concatenated audio and downsized depth data saved as 'all.h5'...\n"
+	with h5py.File('all.h5', 'w') as hf:
+		hf.create_dataset('audio', data=audio)
+		h5.create_dataset('depth', data=new_depth)
+#	np.savez('all', audio=audio, depth=new_depth)
 
 ######################################################
 
 def preprocess_data():
 	print "preprocessing data..."
 	path = os.getcwd()
+#	with h5py.File(path+'/all.h5', 'r') as data:
+#		audio = data['audio'][:]
+#		depth = data['depth'][:]
 	data = np.load(path+'/all.npz')
 	audio = data['audio']
 	depth = data['depth'] # shape: 13274, 12, 16
@@ -105,9 +118,11 @@ def preprocess_data():
 	valid_depth = depth_reshaped
 	new_audio = audio
 
-	if os.path.isfile('input_spectrograms.npy'):
+	if os.path.isfile('input_spectrograms.h5'):
 		print "fetching spectrogram array..."
-		input_set = np.load(path+'/input_spectrograms.npy')
+		with h5py.File(path+'/input_spectrograms.h5', 'r') as sgrams:
+			input_set = sgrams['spectrograms'][:]
+#		input_set = np.load(path+'/input_spectrograms.npy')
 	else: 
 		print "creating spectrogram set 0" 
 		freq1, time1, spectro1 = signal.spectrogram(new_audio[0,:,0], noverlap=250)
@@ -123,10 +138,10 @@ def preprocess_data():
 			freq2, time2, spectro2 = signal.spectrogram(new_audio[i,:,1], noverlap=250)
 			input_set[i,:,:,0] = spectro1
 			input_set[i,:,:,1] = spectro2
-#			plt.pcolormesh(spectro2)
-#		plt.show()
-		np.save('input_spectrograms.npy', input_set)
-		print "array of spectrograms saved as 'input_spectrograms.npy'"
+		print "saving array of spectrograms as 'input_spectrograms.h5'..."
+		with h5py.File('input_spectrograms.h5', 'w') as sgrams:
+			sgrams.create_dataset('spectrograms', data=input_set)
+#		np.save('input_spectrograms.npy', input_set)
 	
 	print "finished preprocessing\n"
 	return input_set, valid_depth
@@ -134,12 +149,18 @@ def preprocess_data():
 ######################################################
 
 def split_data(x, y):
-	if os.path.isfile('model_sets.npz'):
-		sets = np.load('model_sets.npz')
-		xtrain = sets['xtrain']
-		ytrain = sets['ytrain']
-		xtest = sets['xtest']
-		ytest = sets['ytest']
+	if os.path.isfile('model_sets.h5'):
+		print "fetching training and test sets..."
+		with h5py.File('model_sets.h5', 'r') as sets:
+			xtrain = sets['xtrain'][:]
+			ytrain = sets['ytrain'][:]
+			xtest = sets['xtest'][:]
+			ytest = sets['ytest'][:]			
+#		sets = np.load('model_sets.npz')
+#		xtrain = sets['xtrain']
+#		ytrain = sets['ytrain']
+#		xtest = sets['xtest']
+#		ytest = sets['ytest']
 	else:
 		xshape = x.shape[0]
 		xbool = np.zeros_like(x, dtype=bool)
@@ -164,31 +185,35 @@ def split_data(x, y):
 		xtrain = x[np.logical_not(xbool)].reshape((-1,129,385,2))
 		ytrain = y[np.logical_not(ybool)].reshape((-1,192))
 		print "saving data sets..."
-		np.savez('model_sets.npz', 
-							xtrain=xtrain,
-							ytrain=ytrain,
-							xtest=xtest,
-							ytest=ytest)
-		print "training and test sets saved as 'model_sets.npz'"
+		with h5py.File('model_sets.h5', 'w') as sets:
+			sets.create_dataset('xtrain', data=xtrain)
+			sets.create_dataset('ytrain', data=ytrain)
+			sets.create_dataset('xtest', data=xtest)
+			sets.create_dataset('ytest', data=ytest)
+#		np.savez('model_sets.npz', 
+#							xtrain=xtrain,
+#							ytrain=ytrain,
+#							xtest=xtest,
+#							ytest=ytest)
+		print "training and test sets saved as 'model_sets.h5'"
 															
 	return xtrain, ytrain, xtest, ytest
 
 ######################################################
 
-def build_model(x_train, y_train):
+def build_and_train_model(x_train, y_train):
 	net = Sequential()
-	net.add(Conv2D(8, (5,5), 
-			batch_size=32,
+	net.add(Conv2D(32, (5,5), 
 			strides=(1,1), 
 			activation='relu',
 			data_format='channels_last',
 			input_shape=x_train.shape[1:]))
 	net.add(Flatten())
-	net.add(Dense(30, activation='relu'))
+	net.add(Dense(100, activation='relu'))
 	net.add(Dense(192, activation='linear'))
-	net.compile(optimizer='adam', loss=mse_ignore_nan2(y_true, y_pred))
+	net.compile(optimizer='adam', loss=mse_ignore_nan2)
 	print "finished compiling"
-	net.fit(x_train, y_train, validation_split=0.2, epochs=50, batch_size=32)
+	net.fit(x_train, y_train, validation_split=0.2, epochs=20, batch_size=32)
 	net.save('stereo_model.h5')
 	print "model saved as 'stereo_model.h5'"
 	return load_model('stereo_model.h5')
@@ -206,13 +231,14 @@ def run_model(net, x_test, y_test):
 #####################################################
 
 def mse_ignore_nan2(y_true, y_pred):
-    ok_entries = tf.logical_not(tf.is_nan(y_true))
-    safe_targets = tf.where(ok_entries, y_true, y_pred)
-    sqr = tf.square(y_pred - safe_targets)
-    zero_nans = tf.cast(ok_entries, K.floatx())
-    num_ok = tf.reduce_sum(zero_nans, axis=-1) # count OK entries
-    num_ok = tf.maximum(num_ok, tf.ones_like(num_ok)) # avoid divide by zero
-    return tf.reduce_sum(sqr, axis=-1) / num_ok
+	ok_entries = np.all(y_true)
+	ok_entries = tf.cast(ok_entries, bool)
+	safe_targets = tf.where(ok_entries, y_true, y_pred)
+	sqr = tf.square(y_pred - safe_targets)
+	valid = tf.cast(ok_entries, floatx()) 
+	num_ok = tf.reduce_sum(valid, axis=-1) # count OK entries
+	num_ok = tf.maximum(num_ok, tf.ones_like(num_ok)) # avoid divide by zero
+	return tf.reduce_sum(sqr, axis=-1) / num_ok
 
 #####################################################
 
@@ -223,7 +249,7 @@ def main():
 	x_train, y_train, x_test, y_test = split_data(input_set, target)
 	if not os.path.isfile('stereo_model.h5'):
 		print "building model..."
-		model = build_model(x_train[:10], y_train[:10])
+		model = build_and_train_model(x_train, y_train)
 	else: 
 		model = load_model('stereo_model.h5')
 #	loss = run_model(model, x_test, y_test)	

@@ -4,6 +4,7 @@ import os
 import os.path
 
 from scipy import signal
+from sys import argv
 
 ######################################################
 
@@ -34,7 +35,6 @@ def get_data():
 	audio_list = []
 	depth_list = []
 	path = os.getcwd() 
-	print "\n"
 	for i in range(len(files)):
 		print "loading '%s' data..." %files[i]
 		with np.load(path+'/data_stereo/'+files[i]+'.npz') as d:
@@ -55,51 +55,63 @@ def get_data():
 			new_depth[counter] = downsize(d_map)
 			counter += 1
 
-	print "saving concatenated audio and downsized depth data saved as 'all.h5'...\n"
-	with h5py.File('all.h5', 'w') as hf:
+	print "saving concatenated audio and downsized depth data saved as 'base_data.h5'...\n"
+	with h5py.File('base_data.h5', 'w') as hf:
 		hf.create_dataset('audio', data=audio)
 		hf.create_dataset('depth', data=new_depth)
 
 ######################################################
 
-def preprocess_data():
+def preprocess_data(input_type):
 	print "preprocessing data..."
 	path = os.getcwd()
-	with h5py.File(path+'/all.h5', 'r') as data:
+	with h5py.File(path+'/base_data.h5', 'r') as data:
 		audio = data['audio'][:]	
 		depth = data['depth'][:] # shape: 13274, 12, 16
 
 	depth_reshaped = np.reshape(depth, (depth.shape[0],-1)) # shape: 13274, 192
 
-	if os.path.isfile('input_spectrograms.h5'):
-		print "fetching spectrogram array from 'input_spectrograms.h5'..."
-		with h5py.File(path+'/input_spectrograms.h5', 'r') as sgrams:
-			input_set = sgrams['spectrograms'][:]
-	else: 
-		print "creating spectrogram set 0" 
-		freq1, time1, spectro1 = signal.spectrogram(audio[0,:,0], noverlap=250)
-		freq2, time2, spectro2 = signal.spectrogram(audio[0,:,1], noverlap=250)
-		dims = spectro1.shape
-		input_set = np.empty((audio.shape[0], dims[0], dims[1], 2))
-		input_set[0,:,:,0] = spectro1
-		input_set[0,:,:,1] = spectro2
+	if input_type == 1:
+		if os.path.isfile('input_spectrograms.h5'):
+			print "fetching spectrogram array from 'input_spectrograms.h5'..."
+			with h5py.File(path+'/input_spectrograms.h5', 'r') as sgrams:
+				input_set = sgrams['spectrograms'][:]
+		else: 
+			print "creating spectrogram set 0" 
+			freq1, time1, spectro1 = signal.spectrogram(audio[0,:,0], noverlap=250)
+			freq2, time2, spectro2 = signal.spectrogram(audio[0,:,1], noverlap=250)
+			dims = spectro1.shape
+			input_set = np.empty((audio.shape[0], dims[0], dims[1], 2))
+			input_set[0,:,:,0] = spectro1
+			input_set[0,:,:,1] = spectro2
 	
-		for i in range(1,audio.shape[0]):
-			print "creating spectrogram set", i
-			freq1, time1, spectro1 = signal.spectrogram(audio[i,:,0], noverlap=250)
-			freq2, time2, spectro2 = signal.spectrogram(audio[i,:,1], noverlap=250)
-			input_set[i,:,:,0] = spectro1
-			input_set[i,:,:,1] = spectro2
-		print "saving array of spectrograms as 'input_spectrograms.h5'..."
-		with h5py.File('input_spectrograms.h5', 'w') as sgrams:
-			sgrams.create_dataset('spectrograms', data=input_set)
+			for i in range(1,audio.shape[0]):
+				print "creating spectrogram set", i
+				freq1, time1, spectro1 = signal.spectrogram(audio[i,:,0], noverlap=250)
+				freq2, time2, spectro2 = signal.spectrogram(audio[i,:,1], noverlap=250)
+				input_set[i,:,:,0] = spectro1
+				input_set[i,:,:,1] = spectro2
+			print "saving array of spectrograms as 'input_spectrograms.h5'..."
+			with h5py.File('input_spectrograms.h5', 'w') as sgrams:
+				sgrams.create_dataset('spectrograms', data=input_set)
+	else: 
+		input_set = audio
 	
 	return input_set, depth_reshaped
 
 ######################################################
 
-def split_data(x, y):
-	if not os.path.isfile('model_sets.h5'):
+def split_data(x, y, input_type):
+	if input_type == 1:
+		model_name = 'model_sets_spec.h5'
+	else:
+		model_name = 'model_sets_rawA.h5'
+	
+	dims = list(x.shape)
+	dims[0] = -1
+	dims = tuple(dims)
+
+	if not os.path.isfile(model_name):
 		print "splitting dataset into training and test sets..."
 		xshape = x.shape[0]
 		xbool = np.zeros_like(x, dtype=bool)
@@ -118,26 +130,32 @@ def split_data(x, y):
 			ybool[test_start:test_end] = True 
 
 		print "reshaping test vectors..."
-		xtest = x[xbool].reshape((-1,129,385,2))
+		xtest = x[xbool].reshape(dims)
 		ytest = y[ybool].reshape((-1,192))
 		print "reshaping training vectors..."
-		xtrain = x[np.logical_not(xbool)].reshape((-1,129,385,2))
+		xtrain = x[np.logical_not(xbool)].reshape(dims)
 		ytrain = y[np.logical_not(ybool)].reshape((-1,192))
+
 		print "saving data sets..."
-		with h5py.File('model_sets.h5', 'w') as sets:
+		with h5py.File(model_name, 'w') as sets:
 			sets.create_dataset('xtrain', data=xtrain)
 			sets.create_dataset('ytrain', data=ytrain)
 			sets.create_dataset('xtest', data=xtest)
 			sets.create_dataset('ytest', data=ytest)
-		print "training and test sets saved as 'model_sets.h5'"
+		print "training and test sets saved as '%s'" %model_name
 															
 #####################################################
 
 def main():
-	if not os.path.isfile('all.h5'):
+	if len(argv) != 2: 
+		print "usage: stereo_processing.py input_type"
+		print " "*6, "input_type - 1 for spectrograms, 2 for raw audio sample"
+		return
+
+	if not os.path.isfile('base_data.h5'):
 		get_data()
-	input_set, target = preprocess_data()
-	split_data(input_set, target)
+	input_set, target = preprocess_data(int(argv[1]))
+	split_data(input_set, target, int(argv[1]))
 
 main()
 
