@@ -22,15 +22,12 @@ def downsize(img):
 			non_zero = np.delete(window, np.where(window==0))
 			if non_zero.size != 0:
 				downsized_img[i/40,j/40] = np.mean(non_zero)
-#			# ask sprague about this
-#			else: 
-#				downsized_img[i/40,j/40] = 0.00000000001 
 
 	return downsized_img
 
 ######################################################
 
-def get_data():
+def get_data(input_type):
 	files = ['forensics', 'isat243', 'isat246', 'isat248', 'office', 'stairwell', 'spine'] 
 	audio_list = []
 	depth_list = []
@@ -91,11 +88,14 @@ def preprocess_data(input_type):
 				freq2, time2, spectro2 = signal.spectrogram(audio[i,:,1], noverlap=250)
 				input_set[i,:,:,0] = spectro1
 				input_set[i,:,:,1] = spectro2
+			IS = input_set.shape
+			input_set = np.reshape(input_set, (IS[0],IS[1],IS[2],IS[3],1))
 			print "saving array of spectrograms as 'input_spectrograms.h5'..."
 			with h5py.File('input_spectrograms.h5', 'w') as sgrams:
 				sgrams.create_dataset('spectrograms', data=input_set)
 	else: 
-		input_set = audio
+		AS = audio.shape
+		input_set = np.reshape(audio, (AS[0],AS[1],AS[2],1))
 	
 	return input_set, depth_reshaped
 
