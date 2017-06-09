@@ -15,7 +15,7 @@ from scipy import io, signal
 
 def build_and_train_model(x_train, y_train):
 	net = Sequential()
-	net.add(Conv2D(64, (128,2), 
+	net.add(Conv2D(32, (128,2), 
 					activation='relu', 
 					data_format='channels_last', 
 					input_shape=x_train.shape[1:]))
@@ -25,7 +25,7 @@ def build_and_train_model(x_train, y_train):
 	net.add(Dense(192, activation='linear'))
 	net.compile(optimizer='adam', loss=adjusted_mse)
 	print "finished compiling"
-	net.fit(x_train, y_train, validation_split=0.2, epochs=20, batch_size=32)
+	net.fit(x_train, y_train, validation_split=0.2, epochs=50, batch_size=32)
 	net.save('stereo_model_rawA.h5')
 	print "model saved as 'stereo_model_rawA.h5'"
 	return load_model('stereo_model_rawA.h5', custom_objects={'adjusted_mse':adjusted_mse})
@@ -93,7 +93,7 @@ def main():
 			x_test = sets['xtest'][:]
 			y_test = np.log(1+sets['ytest'][:])
 		model = load_model('stereo_model_rawA.h5', custom_objects={'adjusted_mse':adjusted_mse})
-	loss = run_model(model, x_train, y_train)	
+	loss = run_model(model, x_test, y_test)	
 
 main()
 
