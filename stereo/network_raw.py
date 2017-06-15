@@ -13,6 +13,10 @@ from keras import optimizers
 from scipy import io, signal
 from sys import argv
 
+tf.logging.set_verbosity(tf.logging.WARN)
+tf.logging.set_verbosity(tf.logging.INFO)
+os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
+
 ######################################################
 
 def build_and_train_model(x_train, y_train):
@@ -22,18 +26,19 @@ def build_and_train_model(x_train, y_train):
 	RMSprop = optimizers.RMSprop(lr=0.0001)
 
 	net = Sequential()
-	net.add(Conv2D(64, (128,2), 
+	net.add(Conv2D(64, (64,2), 
 					activation='relu', 
 					data_format='channels_last', 
 					input_shape=x_train.shape[1:]))
 	net.add(Conv2D(32, (64,1), activation='relu'))
+	net.add(Conv2D(32, (64,1), activation='relu'))
 	net.add(Flatten())
-	net.add(Dense(200, activation='relu'))
-	net.add(Dense(192, activation='linear'))
+#	net.add(Dense(200, activation='relu'))
+	net.add(Dense(192, activation='linear',bias=False))
 #	net.add(Dense(48, activation='linear'))
 	net.compile(optimizer='adam', loss=adjusted_mse)
 	print "finished compiling"
-	net.fit(x_train, y_train, validation_split=0.2, epochs=100, batch_size=32)
+	net.fit(x_train, y_train, validation_split=0.2, epochs=75, batch_size=32)
 #	net.save('stereo_model_rawA.h5')
 #	print "model saved as 'stereo_model_rawA.h5'"
 #	return load_model('stereo_model_rawA.h5', custom_objects={'adjusted_mse':adjusted_mse})
@@ -42,10 +47,10 @@ def build_and_train_model(x_train, y_train):
 ######################################################
 
 def run_model(net, x_test, y_test):
+	predictions = net.predict(x_test)
 #	loss = adjusted_mse(y_test, predictions)
 	loss = net.evaluate(x_test, y_test)
 	print "\nLOSS:", loss
-	predictions = net.predict(x_test)
 #	for i in range(100,2000, 110):
 	view_depth_maps(100, net, np.exp(y_test)-1,np.exp(predictions)-1)
 

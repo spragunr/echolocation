@@ -5,8 +5,9 @@ import os.path
 
 from random import shuffle
 from scipy import signal
-from sys import argv
+from sys import argv, exit
 
+import matplotlib.pyplot as plt
 ######################################################
 
 def downsize(img):
@@ -56,31 +57,36 @@ def get_data():
 			new_depth[counter] = downsize(d_map)
 			counter += 1
 
-	print "saving concatenated audio and downsized depth data saved as 'base_data3.h5'...\n"
-	with h5py.File('base_data3.h5', 'w') as hf:
+	filename = 'bat_angled.h5'
+
+	print "saving concatenated audio and downsized depth data saved as '%s'...\n" %filename
+	with h5py.File(filename, 'w') as hf:
 		hf.create_dataset('audio', data=audio)
 		hf.create_dataset('depth', data=new_depth)
+	
+	return filename
 
 ######################################################
 
-def preprocess_data(input_type):
+def preprocess_data(input_type,filename):
 	print "preprocessing data..."
 	path = os.getcwd()
-	with h5py.File(path+'/base_data3.h5', 'r') as data:
+	with h5py.File(path+'/'+filename, 'r') as data:
 		audio = data['audio'][:]	
 		depth = data['depth'][:] # shape: 13274, 12, 16
 
 	depth_reshaped = np.reshape(depth, (depth.shape[0],-1)) # shape: 13274, 192
 
 	if input_type == 1:
-		if os.path.isfile('input_spectrograms3.h5'):
-			print "fetching spectrogram array from 'input_spectrograms3.h5'..."
-			with h5py.File(path+'/input_spectrograms3.h5', 'r') as sgrams:
+		spec_name = 'input_spectrograms4.h5'
+		if os.path.isfile(spec_name):
+			print "fetching spectrogram array from '%s'..." %spec_name
+			with h5py.File(path+'/'+spec_name, 'r') as sgrams:
 				input_set = sgrams['spectrograms'][:]
 		else: 
-			print "creating spectrogram set 0" 
-			freq1, time1, spectro1 = signal.spectrogram(audio[0,:,0], noverlap=250)
-			freq2, time2, spectro2 = signal.spectrogram(audio[0,:,1], noverlap=250)
+			'''print "creating spectrogram set 0" 
+			freq1, time1, spectro1 = signal.spectrogram(audio[0,:,0], noverlap=230)
+			freq2, time2, spectro2 = signal.spectrogram(audio[0,:,1], noverlap=230)
 			dims = spectro1.shape
 			input_set = np.empty((audio.shape[0], dims[0], dims[1], 2))
 			input_set[0,:,:,0] = spectro1
@@ -88,14 +94,54 @@ def preprocess_data(input_type):
 	
 			for i in range(1,audio.shape[0]):
 				print "creating spectrogram set", i
-				freq1, time1, spectro1 = signal.spectrogram(audio[i,:,0], noverlap=250)
-				freq2, time2, spectro2 = signal.spectrogram(audio[i,:,1], noverlap=250)
+				freq1, time1, spectro1 = signal.spectrogram(audio[i,:,0], noverlap=230)
+				freq2, time2, spectro2 = signal.spectrogram(audio[i,:,1], noverlap=230)
 				input_set[i,:,:,0] = spectro1
 				input_set[i,:,:,1] = spectro2
 			IS = input_set.shape
 			input_set = np.reshape(input_set, (IS[0],IS[1],IS[2],IS[3],1))
 			print "saving array of spectrograms as 'input_spectrograms3.h5'..."
 			with h5py.File('input_spectrograms3.h5', 'w') as sgrams:
+				sgrams.create_dataset('spectrograms', data=input_set)'''
+
+			print "creating spectrogram 0" 
+			freq1, time1, spectro1 = signal.spectrogram(audio[0,:,0], noverlap=230)
+			freq2, time2, spectro2 = signal.spectrogram(audio[0,:,1], noverlap=230)
+			crop1 = spectro1[65:-35,:]
+			crop2 = spectro2[65:-35,:]
+			combined = np.concatenate((crop1,crop2),axis=1)
+			dims = combined.shape
+			input_set = np.empty((audio.shape[0], dims[0], dims[1], 1))
+			combined = np.reshape(combined, (dims[0], dims[1], 1))
+			input_set[0,:,:,:] = combined
+
+			# show spectrogram
+			'''
+			freq1 = freq1[65:-35]
+			time2 = time2+max(time1)
+			time = np.concatenate((time1,time2))
+			s3 = np.concatenate((spectro1,spectro2), axis=1)
+			plt.pcolormesh(time, freq1, s3)
+			plt.ylabel('freq')
+			plt.show()'''
+
+			print "orig spec dim:", spectro1.shape
+			print "new spec dim:", dims
+			print "combined dim:", combined.shape
+			print "input set dim:", input_set.shape
+
+			for i in range(1,audio.shape[0]):
+				print "creating spectrogram", i
+				freq1, time1, spectro1 = signal.spectrogram(audio[i,:,0], noverlap=230)
+				freq2, time2, spectro2 = signal.spectrogram(audio[i,:,1], noverlap=230)
+				crop1 = spectro1[65:-35,:]
+				crop2 = spectro2[65:-35,:]
+				combined = np.concatenate((crop1,crop2),axis=1)
+				combined = np.reshape(combined, (dims[0], dims[1], 1))
+				input_set[i,:,:,:] = combined
+
+			print "saving array of spectrograms as '%s'..." %spec_name
+			with h5py.File(spec_name, 'w') as sgrams:
 				sgrams.create_dataset('spectrograms', data=input_set)
 	else: 
 		AS = audio.shape
@@ -107,7 +153,7 @@ def preprocess_data(input_type):
 
 def split_data(x, y, input_type):
 	if input_type == 1:
-		model_name = 'model_sets_spec3.h5'
+		model_name = 'model_sets_spec4.h5'
 	else:
 		model_name = 'model_sets_rawA3.h5'
 	
@@ -168,8 +214,8 @@ def main():
 		return
 
 #	if not os.path.isfile('base_data.h5'):
-#	get_data()
-	input_set, target = preprocess_data(int(argv[1]))
+#	filename = get_data()
+	input_set, target = preprocess_data(int(argv[1]),'bat_angled.h5')
 	split_data(input_set, target, int(argv[1]))
 
 main()
