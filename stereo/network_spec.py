@@ -85,7 +85,7 @@ def view_depth_maps(index, model, ytrue, ypred, x):
 
 ####################################################
 def main():
-  if not os.path.isfile('stereo_model_rawA.h5'):
+  if not os.path.isfile('stereo_model_spec.h5'):
     print "building model..."
     path = os.getcwd()
     with h5py.File(path+'/model_sets_spec4.h5', 'r') as sets:
