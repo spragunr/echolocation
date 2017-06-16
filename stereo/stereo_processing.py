@@ -84,26 +84,6 @@ def preprocess_data(input_type,filename):
 			with h5py.File(path+'/'+spec_name, 'r') as sgrams:
 				input_set = sgrams['spectrograms'][:]
 		else: 
-			'''print "creating spectrogram set 0" 
-			freq1, time1, spectro1 = signal.spectrogram(audio[0,:,0], noverlap=230)
-			freq2, time2, spectro2 = signal.spectrogram(audio[0,:,1], noverlap=230)
-			dims = spectro1.shape
-			input_set = np.empty((audio.shape[0], dims[0], dims[1], 2))
-			input_set[0,:,:,0] = spectro1
-			input_set[0,:,:,1] = spectro2
-	
-			for i in range(1,audio.shape[0]):
-				print "creating spectrogram set", i
-				freq1, time1, spectro1 = signal.spectrogram(audio[i,:,0], noverlap=230)
-				freq2, time2, spectro2 = signal.spectrogram(audio[i,:,1], noverlap=230)
-				input_set[i,:,:,0] = spectro1
-				input_set[i,:,:,1] = spectro2
-			IS = input_set.shape
-			input_set = np.reshape(input_set, (IS[0],IS[1],IS[2],IS[3],1))
-			print "saving array of spectrograms as 'input_spectrograms3.h5'..."
-			with h5py.File('input_spectrograms3.h5', 'w') as sgrams:
-				sgrams.create_dataset('spectrograms', data=input_set)'''
-
 			print "creating spectrogram 0" 
 			freq1, time1, spectro1 = signal.spectrogram(audio[0,:,0], noverlap=230)
 			freq2, time2, spectro2 = signal.spectrogram(audio[0,:,1], noverlap=230)
@@ -114,21 +94,6 @@ def preprocess_data(input_type,filename):
 			input_set = np.empty((audio.shape[0], dims[0], dims[1], 1))
 			combined = np.reshape(combined, (dims[0], dims[1], 1))
 			input_set[0,:,:,:] = combined
-
-			# show spectrogram
-			'''
-			freq1 = freq1[65:-35]
-			time2 = time2+max(time1)
-			time = np.concatenate((time1,time2))
-			s3 = np.concatenate((spectro1,spectro2), axis=1)
-			plt.pcolormesh(time, freq1, s3)
-			plt.ylabel('freq')
-			plt.show()'''
-
-			print "orig spec dim:", spectro1.shape
-			print "new spec dim:", dims
-			print "combined dim:", combined.shape
-			print "input set dim:", input_set.shape
 
 			for i in range(1,audio.shape[0]):
 				print "creating spectrogram", i
@@ -219,4 +184,42 @@ def main():
 	split_data(input_set, target, int(argv[1]))
 
 main()
+
+#####################################################
+#####################################################
+
+'''print "creating spectrogram set 0" 
+freq1, time1, spectro1 = signal.spectrogram(audio[0,:,0], noverlap=230)
+freq2, time2, spectro2 = signal.spectrogram(audio[0,:,1], noverlap=230)
+dims = spectro1.shape
+input_set = np.empty((audio.shape[0], dims[0], dims[1], 2))
+input_set[0,:,:,0] = spectro1
+input_set[0,:,:,1] = spectro2
+
+for i in range(1,audio.shape[0]):
+print "creating spectrogram set", i
+freq1, time1, spectro1 = signal.spectrogram(audio[i,:,0], noverlap=230)
+freq2, time2, spectro2 = signal.spectrogram(audio[i,:,1], noverlap=230)
+input_set[i,:,:,0] = spectro1
+input_set[i,:,:,1] = spectro2
+IS = input_set.shape
+input_set = np.reshape(input_set, (IS[0],IS[1],IS[2],IS[3],1))
+print "saving array of spectrograms as 'input_spectrograms3.h5'..."
+with h5py.File('input_spectrograms3.h5', 'w') as sgrams:
+sgrams.create_dataset('spectrograms', data=input_set)'''
+
+# show spectrogram
+'''
+freq1 = freq1[65:-35]
+time2 = time2+max(time1)
+time = np.concatenate((time1,time2))
+s3 = np.concatenate((spectro1,spectro2), axis=1)
+plt.pcolormesh(time, freq1, s3)
+plt.ylabel('freq')
+plt.show()'''
+
+#print "orig spec dim:", spectro1.shape
+#print "new spec dim:", dims
+#print "combined dim:", combined.shape
+#print "input set dim:", input_set.shape
 
