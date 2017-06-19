@@ -6,10 +6,13 @@ with data from a depth camera.
 This requires that the depth camera and sound_play nodes have been
 started (in separate terminals.):
 
+source ./ros_config_account.sh
+
 roslaunch openni2_launch openni2.launch
 roslaunch sound_play soundplay_node.launch
 
 """
+#import h5py
 import sys
 import numpy as np
 
@@ -21,13 +24,13 @@ from sound_play.libsoundplay import SoundClient
 
 from pyaudio_utils import AudioPlayer, AudioRecorder
 
-CHIRP_FILE = '/home/spragunr/echolocation/data/chirp.wav'
+CHIRP_FILE = '/home/hoangnt/echolocation/data/16000to8000.02s.wav'
 
 class Recorder(object):
 
     CHIRP_RATE = 6 # in hz
     RECORD_DURATION = .06 # in seconds
-    CHANNELS = 1
+    CHANNELS = 2
 
     def __init__(self, file_name):
         rospy.init_node('ros_record')
@@ -58,6 +61,7 @@ class Recorder(object):
             
             self.soundhandle.playWave(CHIRP_FILE)
             #self.audio_player.play() # takes a while to actually play. (about .015 seconds)
+            rospy.sleep(.04)
             self.audio_recorder.record(self.RECORD_DURATION)
             while not self.audio_recorder.done_recording():
                 rospy.sleep(.005)
@@ -71,6 +75,9 @@ class Recorder(object):
 
         rospy.loginfo("Saving data to disk...")
         np.savez_compressed(self.file_name, audio=audio, depth=depth)
+	#with h5py.File(self.file_name, 'w') as h5:
+	#	h5.create_dataset('audio', data=audio)
+	#	h5.create_dataset('depth', data=depth)
 
         #self.audio_player.shutdown()
         self.audio_recorder.shutdown()
