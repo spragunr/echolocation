@@ -26,12 +26,12 @@ def build_and_train_model(x_train, y_train, model_file):
   RMSprop = optimizers.RMSprop(lr=0.0001)
 	
   net = Sequential()
-  net.add(Conv2D(64, (5,5), 
-			strides=(1,1), 
+  net.add(Conv3D(64, (5,5,2), 
+			strides=(1,1,1), 
 			activation='relu',
 			data_format='channels_last',
 			input_shape=x_train.shape[1:]))
-  net.add(Conv2D(32, (5,5), strides=(2,2), activation='relu'))
+  net.add(Conv2D(32, (5,5,1), strides=(2,2,1), activation='relu'))
   net.add(Flatten())
   net.add(Dense(600, activation='relu'))
   net.add(Dense(600, activation='relu'))
@@ -98,9 +98,9 @@ def normalize(x_set):
 def main():
 
 	# files
-	model_file = 'model_specA.h5'
-	specs_file = 'input_specA.h5'
-	sets_file = 'sets_specA.h5'
+	model_file = 'model_specB.h5'
+	specs_file = 'input_specB.h5'
+	sets_file = 'sets_specB.h5'
 
 	if os.path.isfile(model_file):
 		print "loading model..."

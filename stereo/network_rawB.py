@@ -30,7 +30,7 @@ def build_and_train_model(x_train, y_train, model_file):
 					activation='relu', 
 					data_format='channels_last', 
 					input_shape=x_train.shape[1:]))
-	net.add(Conv2D(32, (64), activation='relu'))
+	net.add(Conv1D(32, (64), activation='relu'))
 	net.add(Flatten())
 	net.add(Dense(600, activation='relu'))
 	net.add(Dense(600, activation='relu'))
@@ -112,8 +112,8 @@ def view_depth_maps(index, model, ytrue, ypred):
 def main():
 
 	# files 
-	model_file = 'model_rawA.h5'
-	sets_file = 'sets_rawA.h5'
+	model_file = 'model_rawB.h5'
+	sets_file = 'sets_rawB.h5'
 
 	if not os.path.isfile(model_file):
 		print "building model..."

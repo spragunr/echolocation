@@ -2,7 +2,7 @@ import h5py
 import numpy as np
 import os 
 import os.path
-from sys import exit
+
 from random import shuffle
 from scipy import signal
 from sys import argv, exit
@@ -72,8 +72,7 @@ def preprocess_data(input_type,data_file,spec_file):
 	with h5py.File(path+data_file, 'r') as data:
 		audio = data['audio'][:]	
 		depth = data['depth'][:] # shape: 13274, 12, 16
-	
-	AS = audio.shape
+
 	depth_reshaped = np.reshape(depth, (depth.shape[0],-1)) # shape: 13274, 192
 
 	if input_type == 1:
@@ -85,37 +84,27 @@ def preprocess_data(input_type,data_file,spec_file):
 			print "creating spectrogram 0" 
 			freq1, time1, spectro1 = signal.spectrogram(audio[0,:,0], noverlap=230)
 			freq2, time2, spectro2 = signal.spectrogram(audio[0,:,1], noverlap=230)
-			crop1 = spectro1[65:-35,:]
-			crop2 = spectro2[65:-35,:]
-			combined = np.concatenate((crop1,crop2),axis=1)
-			dims = combined.shape
-			input_set = np.empty((AS[0], dims[0], dims[1], 1))
-			combined = np.reshape(combined, (dims[0], dims[1], 1))
-			input_set[0,:,:,:] = combined
+			dims = spectro1.shape
+			input_set = np.empty((audio.shape[0], dims[0], dims[1], 2))
+			input_set[0,:,:,0] = spectro1
+			input_set[0,:,:,1] = spectro2
 
-			for i in range(1,AS[0]):
+			for i in range(1,audio.shape[0]):
 				print "creating spectrogram", i
 				freq1, time1, spectro1 = signal.spectrogram(audio[i,:,0], noverlap=230)
 				freq2, time2, spectro2 = signal.spectrogram(audio[i,:,1], noverlap=230)
-				crop1 = spectro1[65:-35,:]
-				crop2 = spectro2[65:-35,:]
-				combined = np.concatenate((crop1,crop2),axis=1)
-				combined = np.reshape(combined, (dims[0], dims[1], 1))
-				input_set[i,:,:,:] = combined
+				input_set[i,:,:,0] = spectro1
+				input_set[i,:,:,1] = spectro2
+			IS = input_set.shape
+			input_set = np.reshape(input_set, (IS[0],IS[1],IS[2],IS[3],1))
 
 			print "saving array of spectrograms as '%s'..." %spec_file
 			with h5py.File(spec_file, 'w') as sgrams:
 				sgrams.create_dataset('spectrograms', data=input_set)
-	else:
-		print "joining stereo audio samples..."
-		input_set = np.empty((AS[0],AS[1]*2,1))
-		counter = 0
-		for j in audio:
-			combined = np.concatenate((j[:,0],j[:,1]))
-			combined = np.reshape(combined,(AS[1]*2,1))
-			input_set[counter] = combined 
-			counter += 1
-
+	else: 
+		AS = audio.shape
+		input_set = np.reshape(audio, (AS[0],AS[1],AS[2],1))
+	
 	return input_set, depth_reshaped
 
 ######################################################
@@ -175,8 +164,8 @@ def main():
 
 	# files
 	data_file = 'bat_angled.h5' 
-	spec_file = 'input_rawA.h5'
-	sets_file = 'sets_rawA.h5'
+	spec_file = 'input_specB.h5'
+	sets_file = 'sets_rawB.h5'
 
 	if len(argv) != 2: 
 		print "usage: stereo_processing.py input_type"
