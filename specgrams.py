@@ -1,11 +1,12 @@
+import h5py
 import sys
 import numpy as np
 from scipy import signal
 import matplotlib.pyplot as plt
 
-data = np.load(sys.argv[1])
+data = h5py.File(sys.argv[1], "r")
 
-audio = data['audio']
+audio = data['audio'].value
 
 
 for i  in range(36):

@@ -3,12 +3,13 @@
 """Ros node for playing audio chirps and recording the returns along
 with data from a depth camera.
 
-This requires that the depth camera have been
+This requires that the depth camera and the sound play node have been
 started (in a separate terminal.):
 
 source ./ros_config_account.sh
 
 roslaunch openni2_launch openni2.launch
+roslaunch sound_play soundplay_node.launch
 
 """
 import subprocess
@@ -47,8 +48,8 @@ class Recorder(object):
         self.latest_depth = None
         self.latest_rgb = None
 
-        #self.soundhandle = SoundClient(blocking=False)
-        self.audio_player = AudioPlayer(self.chirp_file)
+        self.soundhandle = SoundClient(blocking=False)
+        #self.audio_player = AudioPlayer(self.chirp_file)
         self.audio_recorder = AudioRecorder(channels=self.channels)
 
         if not self.record_rgb:
@@ -86,24 +87,13 @@ class Recorder(object):
 
 
             # Play and record audio
-            self.audio_player.play()
-            rospy.sleep(.03) # hack.  it takes the sound a while to play...
+            #self.audio_player.play()
+            self.soundhandle.playWave(self.chirp_file)
+            rospy.sleep(.04) # hack.  it takes the sound a while to play...
             self.audio_recorder.record(self.record_duration)
             #self.soundhandle.playWave(self.chirp_file)
-            while not self.audio_recorder.done_recording():
-                rospy.sleep(.005)
-                
-            audio = self.audio_recorder.get_data()[1]
 
-            # Reshape mono to be consistent with stereo
-            if (len(audio.shape) == 1):
-                audio = audio.reshape((-1, 1))
-
-            # Resize audio data for correct length
-            if audio.shape[0] > self.audio_set.shape[1]:
-                self.audio_set.resize((self.audio_set.shape[0],
-                                       audio.shape[0],
-                                       audio.shape[1]))
+            audio = self.record()
 
             self.h5_append(self.audio_set, index, audio)
 
@@ -113,10 +103,22 @@ class Recorder(object):
 
 
         self.close_file(index-1)
-        self.audio_player.shutdown()
+        #self.audio_player.shutdown()
         self.audio_recorder.shutdown()
 
 
+    def record(self):
+        self.audio_recorder.record(self.record_duration)
+        while not self.audio_recorder.done_recording():
+            rospy.sleep(.005)
+                
+        audio = self.audio_recorder.get_data()[1]
+
+        # Reshape mono to be consistent with stereo
+        if (len(audio.shape) == 1):
+            audio = audio.reshape((-1, 1))
+        return audio
+        
     def parse_command_line(self):
 
         parser = argparse.ArgumentParser(
@@ -131,7 +133,7 @@ class Recorder(object):
                             help='number of audio channels to record')
         
         parser.add_argument('--rate', type=int, metavar="RATE",
-                            default=10, help='rate to record chirps')
+                            default=6, help='rate to record chirps')
         
         parser.add_argument('--duration', type=float, metavar="DURATION",
                             dest='record_duration',
@@ -156,11 +158,13 @@ class Recorder(object):
 
     def init_data_sets(self):
         self.h5_file = h5py.File(self.out, 'w')
+        test_audio = self.record()
         self.audio_set = self.h5_file.create_dataset('audio',
-                                                     (1, 1, self.channels),
+                                                     (1, test_audio.shape[0], self.channels),
                                                      maxshape=(None,
-                                                               None,
-                                                               self.channels))
+                                                               test_audio.shape[0],
+                                                               self.channels),
+                                                     dtype=np.int16)
 
 
         depth_shape = self.latest_depth.shape
