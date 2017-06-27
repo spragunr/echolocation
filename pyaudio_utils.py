@@ -12,6 +12,7 @@ class AudioPlayer(object):
     
     def __init__(self, wav_filename):
         self.wave_file = wave.open(wav_filename, 'rb')
+        print self.wave_file.getnframes()
         self.pyaudio = pyaudio.PyAudio()
         self.out_stream = None
 
@@ -31,7 +32,7 @@ class AudioPlayer(object):
             channels=self.wave_file.getnchannels(),
             rate=self.wave_file.getframerate(),
             output=True,
-            frames_per_buffer=64,
+            frames_per_buffer=min((self.wave_file.getnframes() +1,1024)),
             stream_callback=self._callback)
 
         self.out_stream.start_stream()
@@ -136,7 +137,7 @@ class AudioRecorder(object):
 
 
 if __name__ == "__main__":
-    player = AudioPlayer('data/test.wav')
+    player = AudioPlayer('data/chirp.wav')
     player.play()
 
     recorder = AudioRecorder()
