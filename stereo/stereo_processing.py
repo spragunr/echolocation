@@ -24,12 +24,12 @@ def main():
 	> spec_file - input spectrograms, needed for spectrogram version of NN only
 	> sets_file - training and test set of input-depth pairs 
 	'''
-	data_file = 'cs_free.h5' #'bat_angled.h5' 
-	spec_file = 'input_specA_cs_free_aligned.h5'
-	sets_file = 'sets_specA_cs_free_aligned.h5'
+	data_file = 'bat_angled_aligned.h5' #'cs_free.h5' 'bat_angled.h5' 
+	spec_file = 'input_specA_bat_angled_aligned.h5'
+	sets_file = 'sets_specA_bat_angled_aligned.h5'
 
 	if len(argv) != 2: 
-		print "usage: stereo_processing.py input_type\n"
+		print "usage: stereo_processing.py input_type"
 		print " "*6, "input_type - specA for side by side spectrograms"
 		print " "*19, "specB for back to back spectrograms"
 		print " "*19, "rawB for side to side raw audio samples"
@@ -38,7 +38,7 @@ def main():
 
 	if not os.path.isfile(data_file):
 		get_data(data_file)
-	input_set, target = preprocess_data(argv[1], data_file, spec_file)
+	input_set, target = get_input(argv[1], data_file, spec_file)
 	split_data(input_set, target, sets_file)
 
 ######################################################
@@ -71,11 +71,10 @@ def get_data(filename):
 	@PARAMS: filename - [string] name of file where data is to be found
 	@RETURN: none
 	'''
-
-	files = ['forensics', 'isat243', 'isat246', 'isat248', 'office', 'stairwell', 'spine'] 
+#	files = ['forensics', 'isat243', 'isat246', 'isat248', 'office', 'stairwell', 'spine'] 
 #	files = ['test5','test6','test7','test8']
 #	files = ['leaves1','leaves2', 'hole1', 'hole2', 'hole3']
-#	files = ['new2', 'new3', 'new4', 'new5', 'new6', 'new7', 'new8', 'new9', 'new10', 'new11', 'new12', 'new13', 'new14', 'new15', 'new16']
+	files = ['new2', 'new3', 'new4', 'new5', 'new6', 'new7', 'new8', 'new9', 'new10', 'new11', 'new12', 'new13', 'new14', 'new15', 'new16']
 	
 	audio_list = []
 	depth_list = []
@@ -88,32 +87,39 @@ def get_data(filename):
 	print "---------------------------------"
 	print "data loading complete\n"
 
-	print "concatenating audio data..."
+	print "aligning audio data..."
 	audio_tuple = tuple(audio_list)
 	audio = np.concatenate(audio_tuple)
+	aligned_audio = align_audio(5000, audio)
 
 	print "downsizing depth data..."
-	new_depth = np.empty((audio.shape[0],12,16))
+	new_depth = np.empty((aligned_audio.shape[0],12,16))
 	counter = 0
 	for d_file in depth_list:
 		for d_map in d_file:
 			new_depth[counter] = downsize(d_map)
 			counter += 1
 
-	print "saving concatenated audio and downsized depth data saved as '%s'...\n" %filename
+	print "saving aligned audio and downsized depth data saved as '%s'...\n" %filename
 	with h5py.File(filename, 'w') as hf:
-		hf.create_dataset('audio', data=audio)
+		hf.create_dataset('audio', data=aligned_audio)
 		hf.create_dataset('depth', data=new_depth)
 	
 ######################################################
 
-def preprocess_data(input_type, data_file, spec_file):
-	print "preprocessing data..."
+def get_input(input_type, data_file, spec_file):
+	'''
+	@PURPOSE: format the NN input (create spectrograms or align stereo data as specified) 
+	@PARAMS: input_type - [string] specified format of input 
+					 data_file - [h5 file] location of stereo audio-depth pairs
+					 spec_file - [h5 file] location of stereo spectrogram inputs
+	@RETURN: [numpy array] formatted NN input, [numpy array] formatted depth (NN output
+	'''
+	print "fetching input data..."
 	path = os.getcwd()+'/'
 	with h5py.File(path+data_file, 'r') as data:
 		audio = data['audio'][:]	
 		depth = data['depth'][:] # shape: 13274, 12, 16
-	audio = align_audio(5000, audio)
 
 	if input_type[:-1] == 'spec':
 		if os.path.isfile(spec_file):
@@ -121,9 +127,9 @@ def preprocess_data(input_type, data_file, spec_file):
 			with h5py.File(path+spec_file, 'r') as sgrams:
 				input_set = sgrams['spectrograms'][:]
 		elif input_type[-1] == 'A':
-			input_set = side_by_side_spectrograms(audio)
+			input_set = side_by_side_spectrograms(audio, spec_file)
 		elif input_type[-1] == 'B': 
-			input_set = back_to_back_spectrograms(audio)
+			input_set = back_to_back_spectrograms(audio, spec_file)
 		else:
 			print "ERROR: invalid input type"
 			exit()
@@ -144,13 +150,19 @@ def preprocess_data(input_type, data_file, spec_file):
 
 ######################################################
 
-def side_by_side_spectrograms(audio):
+def side_by_side_spectrograms(audio, spec_file):
+	'''
+	@PURPOSE: arrange cropped spectograms side by side 
+	@PARAMS: audio - [numpy array] source for spectrograms 
+					 spec_file - [h5 file] file to save resulting spectrograms in
+	@RETURN: [numpy array] formatted spectrogram representation of audio 
+	'''
 	AS = audio.shape
 	print "creating spectrogram 0" 
 	freq1, time1, spectro1 = signal.spectrogram(audio[0,:,0], noverlap=230)
 	freq2, time2, spectro2 = signal.spectrogram(audio[0,:,1], noverlap=230)
-	crop1 = spectro1[65:-35,:]
-	crop2 = spectro2[65:-35,:]
+	crop1 = spectro1[30:-35,:]
+	crop2 = spectro2[30:-35,:]
 	combined = np.concatenate((crop1,crop2),axis=1)
 	dims = combined.shape
 	input_set = np.empty((AS[0], dims[0], dims[1], 1))
@@ -160,11 +172,12 @@ def side_by_side_spectrograms(audio):
 		print "creating spectrogram", i
 		freq1, time1, spectro1 = signal.spectrogram(audio[i,:,0], noverlap=230)
 		freq2, time2, spectro2 = signal.spectrogram(audio[i,:,1], noverlap=230)
-		crop1 = spectro1[65:-35,:]
-		crop2 = spectro2[65:-35,:]
+		crop1 = spectro1[30:-35,:]
+		crop2 = spectro2[30:-35,:]
 		combined = np.concatenate((crop1,crop2),axis=1)
 		combined = np.reshape(combined, (dims[0], dims[1], 1))
 		input_set[i,:,:,:] = combined
+
 	print "saving array of spectrograms as '%s'..." %spec_file
 	with h5py.File(spec_file, 'w') as sgrams:
 		sgrams.create_dataset('spectrograms', data=input_set)
@@ -172,27 +185,34 @@ def side_by_side_spectrograms(audio):
 
 ######################################################
 
-def back_to_back_spectrograms(audio):
+def back_to_back_spectrograms(audio, spec_file):
+	'''
+	@PURPOSE: arrange cropped spectograms back to back 
+	@PARAMS: audio - [numpy array] source for spectrograms 
+					 spec_file - [h5 file] file to save resulting spectrograms in
+	@RETURN: [numpy array] formatted spectrogram representation of audio 
+	'''
 	AS = audio.shape
 	print "creating spectrogram 0" 
 	freq1, time1, spectro1 = signal.spectrogram(audio[0,:,0], noverlap=230)
 	freq2, time2, spectro2 = signal.spectrogram(audio[0,:,1], noverlap=230)
-	crop1 = spectro1[65:-35,:]
-	crop2 = spectro2[65:-35,:]
+	crop1 = spectro1[30:-35,:]
+	crop2 = spectro2[30:-35,:]
 	dims = crop1.shape
 	input_set = np.empty((AS[0], dims[0], dims[1], 2))
-	input_set[0,;,;,0] = spectro1
-	input_set[0,;,;,1] = spectro2
+	input_set[0,:,:,0] = spectro1
+	input_set[0,:,:,1] = spectro2
 	for i in range(1,AS[0]):
 		print "creating spectrogram", i 
 		freq1, time1, spectro1 = signal.spectrogram(audio[i,:,0], noverlap=230)
 		freq2, time2, spectro2 = signal.spectrogram(audio[i,:,1], noverlap=230)
-		crop1 = spectro1[65:-35,:]
-		crop2 = spectro2[65:-35,:]
-		input_set[i,;,;,0] = spectro1
-		input_set[i,;,;,1] = spectro2
+		crop1 = spectro1[30:-35,:]
+		crop2 = spectro2[30:-35,:]
+		input_set[i,:,:,0] = spectro1
+		input_set[i,:,:,1] = spectro2
 	IS = input_set.shape
 	input_set = np.reshape(input_set, (IS[0],IS[1],IS[2],IS[3],1))
+
 	print "saving array of spectrograms as '%s'..." %spec_file
 	with h5py.File(spec_file, 'w') as sgrams:
 		sgrams.create_dataset('spectrograms', data=input_set)
@@ -201,6 +221,11 @@ def back_to_back_spectrograms(audio):
 ######################################################
 
 def side_by_side_raw_audio_samples(audio):
+	'''
+	@PURPOSE: arrange digitalized audio samples side by side 
+	@PARAMS: audio - [numpy array] digitalized audio samples 
+	@RETURN: [numpy array] formatted audio input 
+	'''
 	AS = audio.shape
 	print "joining stereo audio samples..."
 	input_set = np.empty((AS[0],AS[1]*2,1))
@@ -214,7 +239,12 @@ def side_by_side_raw_audio_samples(audio):
 
 ######################################################
 
-def back_to_back_raw_audio_samples(audio):
+def back_to_back_raw_audio_samples(audio, spec_file):
+	'''
+	@PURPOSE: arrange digitalized audio samples back to back 
+	@PARAMS: audio - [numpy array] digitalized audio samples 
+	@RETURN: [numpy array] formatted audio input 
+	'''
 	AS = audio.shape
 	input_set = np.reshape(audio, (AS[0],AS[1],AS[2],1))
 	return input_set
@@ -242,7 +272,6 @@ def split_data(x, y, sets_name):
 		half_test_size = int((xshape*0.2)/14)
 	
 		for i in range(7):
-			print "creating bool array for subset",i
 			start_index = subset_size*i
 			end_index = start_index + subset_size
 			mid_index = int((0.5*(end_index-start_index)) + start_index) 
@@ -251,14 +280,10 @@ def split_data(x, y, sets_name):
 			xbool[test_start:test_end] = True
 			ybool[test_start:test_end] = True 
 
-		print "reshaping test vectors..."
 		xtest = x[xbool].reshape(dims)
 		ytest = y[ybool].reshape((-1,192))
-		print "reshaping training vectors..."
 		xtrain = x[np.logical_not(xbool)].reshape(dims)
 		ytrain = y[np.logical_not(ybool)].reshape((-1,192))
-		print "x train before:", xtrain.shape
-		print "y train before:", ytrain.shape
 
 		print "shuffling for training set..."
 		combined = zip(xtrain, ytrain)
@@ -266,8 +291,6 @@ def split_data(x, y, sets_name):
 		xtrain, ytrain = zip(*combined)
 		xtrain = np.asarray(xtrain)
 		ytrain = np.asarray(ytrain)
-		print "x train after:", xtrain.shape
-		print "y train after:", ytrain.shape
 
 		print "saving data sets..."
 		with h5py.File(sets_name, 'w') as sets:
@@ -296,7 +319,8 @@ def align_audio(threshold, audio):
 			result_array[row, 0:end_index] = audio[row,threshold_index:]
 		else:
 			result_array[row,:] = audio[row,:]
-	'''for row in range(0, result_array.shape[0]):
+
+	'''for row in range(0, result_array.shape[0], 250):
 		plt.subplot(2,1,1)
 		plt.plot(audio[row,:])
 		plt.subplot(2,1,2)
@@ -309,3 +333,16 @@ def align_audio(threshold, audio):
 main()
 
 
+#####################################################
+### print spec ###
+'''for row in range(0, AS[0], 2500):
+plt.subplot(2,2,1)
+plt.pcolormesh(time1, freq1, spectro1)
+plt.subplot(2,2,2)
+plt.pcolormesh(time1, freq1[30:-35], crop1)
+plt.subplot(2,2,3)
+plt.pcolormesh(time2, freq2, spectro2)
+plt.subplot(2,2,4)
+plt.pcolormesh(time2, freq2[30:-35], crop2)
+plt.show()
+'''
