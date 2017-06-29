@@ -19,6 +19,34 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
 ######################################################
 
+def main():
+
+	# files
+	model_file = 'model_specB.h5'
+	specs_file = 'input_specB.h5'
+	sets_file = 'sets_specB.h5'
+
+	if os.path.isfile(model_file):
+		print "loading model..."
+		path = os.getcwd()+'/'
+		with h5py.File(path+sets_file, 'r') as sets:
+			x_test = normalize(sets['xtest'][:])
+			y_test = np.log(1+sets['ytest'][:])
+		model = load_model(model_file, custom_objects={'adjusted_mse':adjusted_mse})
+	else:
+		print "building model..."
+		path = os.getcwd()+'/'
+		with h5py.File(path+sets_file, 'r') as sets:	
+			x_train = normalize(sets['xtrain'][:])
+			y_train = np.log(1+sets['ytrain'][:])
+			x_test = normalize(sets['xtest'][:])
+			y_test = np.log(1+sets['ytest'][:])
+		model = build_and_train_model(x_train, y_train, model_file)
+	loss = run_model(model, x_test, y_test)
+
+######################################################
+######################################################
+
 def build_and_train_model(x_train, y_train, model_file):
   adam = optimizers.Adam(lr=0.001)
   nadam = optimizers.Nadam(lr=0.002)
@@ -31,7 +59,7 @@ def build_and_train_model(x_train, y_train, model_file):
 			activation='relu',
 			data_format='channels_last',
 			input_shape=x_train.shape[1:]))
-  net.add(Conv2D(32, (5,5,1), strides=(2,2,1), activation='relu'))
+  net.add(Conv3D(32, (5,5,1), strides=(2,2,1), activation='relu'))
   net.add(Flatten())
   net.add(Dense(600, activation='relu'))
   net.add(Dense(600, activation='relu'))
@@ -94,31 +122,6 @@ def normalize(x_set):
 	return new
 
 ####################################################
-
-def main():
-
-	# files
-	model_file = 'model_specB.h5'
-	specs_file = 'input_specB.h5'
-	sets_file = 'sets_specB.h5'
-
-	if os.path.isfile(model_file):
-		print "loading model..."
-		path = os.getcwd()+'/'
-		with h5py.File(path+sets_file, 'r') as sets:
-			x_test = normalize(sets['xtest'][:])
-			y_test = np.log(1+sets['ytest'][:])
-		model = load_model(model_file, custom_objects={'adjusted_mse':adjusted_mse})
-	else:
-		print "building model..."
-  	path = os.getcwd()+'/'
-  	with h5py.File(path+sets_file, 'r') as sets:	
-			x_train = normalize(sets['xtrain'][:])
-			y_train = np.log(1+sets['ytrain'][:])
-			x_test = normalize(sets['xtest'][:])
-			y_test = np.log(1+sets['ytest'][:])
-  	model = build_and_train_model(x_train, y_train, model_file)
-	loss = run_model(model, x_test, y_test)
 
 main()
 
