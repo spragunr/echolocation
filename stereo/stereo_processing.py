@@ -24,9 +24,9 @@ def main():
 	> spec_file - input spectrograms, needed for spectrogram version of NN only
 	> sets_file - training and test set of input-depth pairs 
 	'''
-	data_file = 'bat_angled_aligned.h5' #'cs_free.h5' 'bat_angled.h5' 
-	spec_file = 'input_specA_bat_angled_aligned.h5'
-	sets_file = 'sets_specA_bat_angled_aligned.h5'
+	data_file = 'data_checkers.h5' #'cs_free.h5' 'bat_angled.h5' 
+	spec_file = 'spec_checkers.h5'
+	sets_file = 'sets_checkers.h5'
 
 	if len(argv) != 2: 
 		print "usage: stereo_processing.py input_type"
@@ -74,16 +74,20 @@ def get_data(filename):
 #	files = ['forensics', 'isat243', 'isat246', 'isat248', 'office', 'stairwell', 'spine'] 
 #	files = ['test5','test6','test7','test8']
 #	files = ['leaves1','leaves2', 'hole1', 'hole2', 'hole3']
-	files = ['new2', 'new3', 'new4', 'new5', 'new6', 'new7', 'new8', 'new9', 'new10', 'new11', 'new12', 'new13', 'new14', 'new15', 'new16']
-	
+#	files = ['new2', 'new3', 'new4', 'new5', 'new6', 'new7', 'new8', 'new9', 'new10', 'new11', 'new12', 'new13', 'new14', 'new15', 'new16']
+	files = ['robotics1']
+
 	audio_list = []
 	depth_list = []
 	path = os.getcwd()+'/' 
 	for i in range(len(files)):
 		print "loading '%s' data..." %files[i]
-		with np.load(path+'/data_stereo3/'+files[i]+'.npz') as d:
-			audio_list.append(d['audio'])
-			depth_list.append(d['depth'])
+		#with np.load(path+files[i]+'.npz') as d:
+		#	audio_list.append(d['audio'])
+		#	depth_list.append(d['depth'])
+		with h5py.File(path+files[i]+'.h5', 'r') as d:
+			audio_list.append(d['audio'].value)
+			depth_list.append(d['depth'].value)
 	print "---------------------------------"
 	print "data loading complete\n"
 
