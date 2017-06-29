@@ -190,11 +190,9 @@ class Recorder(object):
     def old_close_file(self, num_recorded):
         self.audio_set.resize(tuple([num_recorded] +
                                     list(self.audio_set.shape[1:])))
-				np_audio = np.array(self.audio_set)
                                                           
         self.depth_set.resize(tuple([num_recorded] +
                                     list(self.depth_set.shape[1:])))
-				np_depth = np.array(self.depth_set)
 
         if self.record_rgb:
             self.rgb_set.resize(tuple([num_recorded] +
@@ -211,21 +209,22 @@ class Recorder(object):
         if self.record_rgb:
             self.rgb_set.resize(tuple([num_recorded] +
                                       list(self.rgb_set.shape[1:])))
-						np_rgb = np.array(self.rgb_set)
-						self.npz_file = np.savez_compressed(self.out, audio=self.audio_set, depth=self.depth_set, rgb=self.rgb_set)
+	    self.npz_file = np.savez_compressed(self.out, audio=self.audio_set, depth=self.depth_set, rgb=self.rgb_set)
 
-				self.npz_file = np.savez_compressed(self.out, audio=self.audio_set, depth=self.depth_set)
+	else:
+	    self.npz_file = np.savez_compressed(self.out, audio=self.audio_set, depth=self.depth_set)
 
         self.npz_file.close()
 
     def init_data_sets(self):
-			test_audio = self.record()
-			self.audio_set = []
-			self.depth_set = []
+	test_audio = self.record()
+	self.audio_set = np.empty((1, test_audio.shape[0], self.channels))
+        depth_shape = self.latest_depth.shape
+	self.depth_set = np.empty((10, depth_shape[0], depth_shape[1]))
 
-			if self.record_rgb:
-				rgb_shape = self.latest_rgb.shape
-				self.rgb_set = []
+	if self.record_rgb:
+	    rgb_shape = self.latest_rgb.shape
+	    self.rgb_set = np.empty((10, rgb_shape[0],rgb_shape[1], rgb_shape[2]))
 
     def h5_append(self, dset, index, item):
         if index == dset.shape[0]:
