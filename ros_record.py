@@ -79,11 +79,11 @@ class Recorder(object):
                 depth_image = self.latest_depth
                 rgb_image = self.latest_rgb
                 self.lock.release()
-                self.h5_append(self.depth_set, index, depth_image)
-                self.h5_append(self.rgb_set, index, rgb_image)
+                self.npz_append(self.depth_set, index, depth_image)
+                self.npz_append(self.rgb_set, index, rgb_image)
             else:
                 depth_image = self.latest_depth
-                self.h5_append(self.depth_set, index, depth_image)
+                self.npz_append(self.depth_set, index, depth_image)
 
 
             # Play and record audio
@@ -95,7 +95,7 @@ class Recorder(object):
 
             audio = self.record()
 
-            self.h5_append(self.audio_set, index, audio)
+            self.npz_append(self.audio_set, index, audio)
 
             index += 1
 
@@ -156,39 +156,7 @@ class Recorder(object):
         parser.parse_args(namespace=self)
 
 
-    def init_data_sets(self):
-	with h5py.File(self.out, 'w') as self.h5_file:
-	  test_audio = self.record()
-	  self.audio_set = self.h5_file.create_dataset('audio',
-						       (1, test_audio.shape[0], self.channels),
-						       maxshape=(None,
-								 test_audio.shape[0],
-								 self.channels),
-						       dtype=np.int16)
-
-
-	  depth_shape = self.latest_depth.shape
-	  self.depth_set = self.h5_file.create_dataset('depth', (10,
-							    depth_shape[0],
-							    depth_shape[1]),
-						  maxshape=(None,
-							    depth_shape[0],
-							    depth_shape[1]),
-						  dtype=self.latest_depth.dtype)
-	  if self.record_rgb:
-	      rgb_shape = self.latest_rgb.shape
-	      self.rgb_set = self.h5_file.create_dataset('rgb', (10,
-								 rgb_shape[0],
-								 rgb_shape[1],
-								 rgb_shape[2]),
-							 maxshape=(None,
-								   rgb_shape[0],
-								   rgb_shape[1],
-								   rgb_shape[2]),
-							 dtype=self.latest_rgb.dtype)
-		
-
-	'''
+    def old_init_data_sets(self):
         self.h5_file = h5py.File(self.out, 'w')
         test_audio = self.record()
         self.audio_set = self.h5_file.create_dataset('audio',
@@ -217,7 +185,22 @@ class Recorder(object):
                                                                  rgb_shape[0],
                                                                  rgb_shape[1],
                                                                  rgb_shape[2]),
-                                                       dtype=self.latest_rgb.dtype)'''
+                                                       dtype=self.latest_rgb.dtype)
+
+    def old_close_file(self, num_recorded):
+        self.audio_set.resize(tuple([num_recorded] +
+                                    list(self.audio_set.shape[1:])))
+				np_audio = np.array(self.audio_set)
+                                                          
+        self.depth_set.resize(tuple([num_recorded] +
+                                    list(self.depth_set.shape[1:])))
+				np_depth = np.array(self.depth_set)
+
+        if self.record_rgb:
+            self.rgb_set.resize(tuple([num_recorded] +
+                                      list(self.rgb_set.shape[1:])))
+
+        self.h5_file.close()
 
     def close_file(self, num_recorded):
         self.audio_set.resize(tuple([num_recorded] +
@@ -228,14 +211,31 @@ class Recorder(object):
         if self.record_rgb:
             self.rgb_set.resize(tuple([num_recorded] +
                                       list(self.rgb_set.shape[1:])))
+						np_rgb = np.array(self.rgb_set)
+						self.npz_file = np.savez_compressed(self.out, audio=self.audio_set, depth=self.depth_set, rgb=self.rgb_set)
 
-        self.h5_file.close()
+				self.npz_file = np.savez_compressed(self.out, audio=self.audio_set, depth=self.depth_set)
+
+        self.npz_file.close()
+
+    def init_data_sets(self):
+			test_audio = self.record()
+			self.audio_set = []
+			self.depth_set = []
+
+			if self.record_rgb:
+				rgb_shape = self.latest_rgb.shape
+				self.rgb_set = []
 
     def h5_append(self, dset, index, item):
         if index == dset.shape[0]:
             dset.resize(tuple([index*2] + list(dset.shape[1:])))
         dset[index, ...] = item
             
+    def npz_append(self, dset, index, item):
+        if index == dset.shape[0]:
+            dset.resize(tuple([index*2] + list(dset.shape[1:])))
+        dset[index, ...] = item
 
     def depth_callback(self, depth_image):
         self.latest_depth = self.bridge.imgmsg_to_cv2(depth_image)
