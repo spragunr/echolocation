@@ -146,7 +146,7 @@ class Recorder(object):
                             default=100, help='mic_level (0-100)')
 
         parser.add_argument('-c', '--chirp-file', type=str, metavar="CHIRP_FILE",
-                            default='./chirp.wav',
+                            default='/home/hoangnt/echolocation/data/20000to12000.02s.wav',
                             help='Location of .wav file.')
 
 
@@ -157,6 +157,38 @@ class Recorder(object):
 
 
     def init_data_sets(self):
+	with h5py.File(self.out, 'w') as self.h5_file:
+	  test_audio = self.record()
+	  self.audio_set = self.h5_file.create_dataset('audio',
+						       (1, test_audio.shape[0], self.channels),
+						       maxshape=(None,
+								 test_audio.shape[0],
+								 self.channels),
+						       dtype=np.int16)
+
+
+	  depth_shape = self.latest_depth.shape
+	  self.depth_set = self.h5_file.create_dataset('depth', (10,
+							    depth_shape[0],
+							    depth_shape[1]),
+						  maxshape=(None,
+							    depth_shape[0],
+							    depth_shape[1]),
+						  dtype=self.latest_depth.dtype)
+	  if self.record_rgb:
+	      rgb_shape = self.latest_rgb.shape
+	      self.rgb_set = self.h5_file.create_dataset('rgb', (10,
+								 rgb_shape[0],
+								 rgb_shape[1],
+								 rgb_shape[2]),
+							 maxshape=(None,
+								   rgb_shape[0],
+								   rgb_shape[1],
+								   rgb_shape[2]),
+							 dtype=self.latest_rgb.dtype)
+		
+
+	'''
         self.h5_file = h5py.File(self.out, 'w')
         test_audio = self.record()
         self.audio_set = self.h5_file.create_dataset('audio',
@@ -185,7 +217,7 @@ class Recorder(object):
                                                                  rgb_shape[0],
                                                                  rgb_shape[1],
                                                                  rgb_shape[2]),
-                                                       dtype=self.latest_rgb.dtype)
+                                                       dtype=self.latest_rgb.dtype)'''
 
     def close_file(self, num_recorded):
         self.audio_set.resize(tuple([num_recorded] +
