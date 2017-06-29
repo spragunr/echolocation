@@ -75,17 +75,18 @@ def get_data(filename):
 #	files = ['test5','test6','test7','test8']
 #	files = ['leaves1','leaves2', 'hole1', 'hole2', 'hole3']
 #	files = ['new2', 'new3', 'new4', 'new5', 'new6', 'new7', 'new8', 'new9', 'new10', 'new11', 'new12', 'new13', 'new14', 'new15', 'new16']
-	files = ['robotics1']
+	files = ['robotics2', 'robotics3', 'robotics1', 'isat267a', 'isat267b', 'isat243a']
 
 	audio_list = []
 	depth_list = []
-	path = os.getcwd()+'/' 
+	#path = os.getcwd()+'/' 
+	path = '/media/hoangnt/seagate/big_data/'
 	for i in range(len(files)):
 		print "loading '%s' data..." %files[i]
 		#with np.load(path+files[i]+'.npz') as d:
 		#	audio_list.append(d['audio'])
 		#	depth_list.append(d['depth'])
-		with h5py.File(path+files[i]+'.h5', 'r') as d:
+		with h5py.File(path+files[i], 'r') as d:
 			audio_list.append(d['audio'].value)
 			depth_list.append(d['depth'].value)
 	print "---------------------------------"
@@ -324,12 +325,12 @@ def align_audio(threshold, audio):
 		else:
 			result_array[row,:] = audio[row,:]
 
-	'''for row in range(0, result_array.shape[0], 250):
+	for row in range(0, result_array.shape[0], 250):
 		plt.subplot(2,1,1)
 		plt.plot(audio[row,:])
 		plt.subplot(2,1,2)
 		plt.plot(result_array[row,:]) 
-		plt.show()'''
+		plt.show()
 	return result_array
 
 #####################################################
