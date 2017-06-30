@@ -44,26 +44,6 @@ def main():
 ######################################################
 ######################################################
 
-def downsize(img, factor=40):
-	'''
-	@PURPOSE: downsizes an image by a factor of its dimensions
-	@PARAMS: img - [numpy array] image to downsize 
-					 factor - [int] factor to downsize image by (default is 40)
-	@RETURN: [numpy array] downsized image
-	'''
-	orig_dims = img.shape
-	ds_dims = (orig_dims[0]/factor, orig_dims[1]/factor)
-	downsized_img = np.zeros(ds_dims)
-	for i in range(0,orig_dims[0],factor):
-		for j in range(0,orig_dims[1],factor):
-			window = img[i:i+factor, j:j+factor].flatten()
-			non_zero = np.delete(window, np.where(window==0))
-			if non_zero.size != 0:
-				downsized_img[i/factor,j/factor] = np.mean(non_zero)
-	return downsized_img
-
-######################################################
-
 def get_data(filename):
 	'''
 	@PURPOSE: joins individual files of collected audio-depth data, 
@@ -75,12 +55,12 @@ def get_data(filename):
 #	files = ['test5','test6','test7','test8']
 #	files = ['leaves1','leaves2', 'hole1', 'hole2', 'hole3']
 #	files = ['new2', 'new3', 'new4', 'new5', 'new6', 'new7', 'new8', 'new9', 'new10', 'new11', 'new12', 'new13', 'new14', 'new15', 'new16']
-	files = ['robotics2', 'robotics3', 'robotics1', 'isat267a', 'isat267b', 'isat243a']
+        files = ['isat143a','isat143b','isat231a','isat231b','isat243a','isat243b','isat246a','isat246b','isat246b']
 
 	audio_list = []
 	depth_list = []
 	#path = os.getcwd()+'/' 
-	path = '/media/hoangnt/seagate/big_data/'
+	path = '/media/hoangnt/seagate/legit_data/'
 	for i in range(len(files)):
 		print "loading '%s' data..." %files[i]
 		#with np.load(path+files[i]+'.npz') as d:
@@ -110,6 +90,26 @@ def get_data(filename):
 		hf.create_dataset('audio', data=aligned_audio)
 		hf.create_dataset('depth', data=new_depth)
 	
+######################################################
+
+def downsize(img, factor=40):
+	'''
+	@PURPOSE: downsizes an image by a factor of its dimensions
+	@PARAMS: img - [numpy array] image to downsize 
+					 factor - [int] factor to downsize image by (default is 40)
+	@RETURN: [numpy array] downsized image
+	'''
+	orig_dims = img.shape
+	ds_dims = (orig_dims[0]/factor, orig_dims[1]/factor)
+	downsized_img = np.zeros(ds_dims)
+	for i in range(0,orig_dims[0],factor):
+		for j in range(0,orig_dims[1],factor):
+			window = img[i:i+factor, j:j+factor].flatten()
+			non_zero = np.delete(window, np.where(window==0))
+			if non_zero.size != 0:
+				downsized_img[i/factor,j/factor] = np.mean(non_zero)
+	return downsized_img
+
 ######################################################
 
 def get_input(input_type, data_file, spec_file):
