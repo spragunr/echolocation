@@ -26,7 +26,7 @@ def main():
 	'''
 	data_file = 'data_half.h5' #'cs_free.h5' 'bat_angled.h5' 
 	spec_file = 'spec_half.h5'
-	sets_file = 'sets_half.h5'
+	sets_file = 'sets_half_specA.h5'
 
 	if len(argv) != 2: 
 		print "usage: stereo_processing.py input_type"
@@ -75,13 +75,13 @@ def get_data(filename):
 #	files = ['test5','test6','test7','test8']
 #	files = ['leaves1','leaves2', 'hole1', 'hole2', 'hole3']
 #	files = ['new2', 'new3', 'new4', 'new5', 'new6', 'new7', 'new8', 'new9', 'new10', 'new11', 'new12', 'new13', 'new14', 'new15', 'new16']
-        files = ['isat143a','isat143b','isat231a','isat231b','isat243a','isat243b','isat246a','isat246b', 'isat246c', 'isat248a', 'isat248b', 'isat248c']
+	files = ['isat143a','isat143b','isat231a','isat231b','isat243a','isat243b','isat246a','isat246b', 'isat246c', 'isat248a', 'isat248b', 'isat248c']
 
 	audio_list = []
 	depth_list = []
 	#path = os.getcwd()+'/' 
-	#path = '/media/hoangnt/seagate/legit_data/'
-	path = '/Volumes/seagate/legit_data/'
+	path = '/media/hoangnt/seagate/legit_data/'
+	#path = '/Volumes/seagate/legit_data/'
         for i in range(len(files)):
 		print "loading '%s' data..." %files[i]
 		#with np.load(path+files[i]+'.npz') as d:
@@ -96,7 +96,7 @@ def get_data(filename):
 	print "aligning audio data..."
 	audio_tuple = tuple(audio_list)
 	audio = np.concatenate(audio_tuple)
-        print audio.shape
+	print audio.shape
 	aligned_audio = align_audio(5000, audio)
 
 	print "starting depth map downsizing..."
@@ -104,7 +104,7 @@ def get_data(filename):
 	counter = 0
 	for d_file in depth_list:
 		for d_map in d_file:
-                        print "downsizing depth map", counter
+			print "downsizing depth map", counter
 			new_depth[counter] = downsize(d_map)
 			counter += 1
 
@@ -327,13 +327,13 @@ def align_audio(threshold, audio, plot=False):
 			result_array[row, 0:end_index] = audio[row,threshold_index:]
 		else:
 			result_array[row,:] = audio[row,:]
-        if plot:
-            for row in range(0, result_array.shape[0], 250):
-                    plt.subplot(2,1,1)
-                    plt.plot(audio[row,:])
-                    plt.subplot(2,1,2)
-                    plt.plot(result_array[row,:]) 
-                    plt.show()
+	if plot:
+		for row in range(0, result_array.shape[0], 250):
+			plt.subplot(2,1,1)
+			plt.plot(audio[row,:])
+			plt.subplot(2,1,2)
+			plt.plot(result_array[row,:]) 
+			plt.show()
 	return result_array
 
 #####################################################
