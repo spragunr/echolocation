@@ -80,8 +80,8 @@ def get_data(filename):
 	audio_list = []
 	depth_list = []
 	#path = os.getcwd()+'/' 
-	path = '/media/hoangnt/seagate/legit_data/'
-	#path = '/Volumes/seagate/legit_data/'
+	#path = '/media/hoangnt/seagate/legit_data/'
+	path = '/Volumes/seagate/legit_data/'
         for i in range(len(files)):
 		print "loading '%s' data..." %files[i]
 		#with np.load(path+files[i]+'.npz') as d:
@@ -112,7 +112,8 @@ def get_data(filename):
 	with h5py.File(filename, 'w') as hf:
 		hf.create_dataset('audio', data=aligned_audio)
 		hf.create_dataset('depth', data=new_depth)
-	
+	exit()
+
 ######################################################
 
 def get_input(input_type, data_file, spec_file):
@@ -338,7 +339,8 @@ def align_audio(threshold, audio, plot=False):
 
 #####################################################
 
-main()
+if __name__ == "__main__":
+	main()
 
 
 #####################################################
