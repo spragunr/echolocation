@@ -99,11 +99,12 @@ def get_data(filename):
         print audio.shape
 	aligned_audio = align_audio(5000, audio)
 
-	print "downsizing depth data..."
+	print "starting depth map downsizing..."
 	new_depth = np.empty((aligned_audio.shape[0],12,16))
 	counter = 0
 	for d_file in depth_list:
 		for d_map in d_file:
+                        print "downsizing depth map", counter
 			new_depth[counter] = downsize(d_map)
 			counter += 1
 
@@ -309,7 +310,7 @@ def split_data(x, y, sets_name):
 															
 #####################################################
 
-def align_audio(threshold, audio):
+def align_audio(threshold, audio, plot=False):
 	'''
 	@PURPOSE: removes starting values of audio data that fall below threshold, 
 						pads data's end with zeros to account for shape difference
@@ -326,13 +327,13 @@ def align_audio(threshold, audio):
 			result_array[row, 0:end_index] = audio[row,threshold_index:]
 		else:
 			result_array[row,:] = audio[row,:]
-
-	for row in range(0, result_array.shape[0], 250):
-		plt.subplot(2,1,1)
-		plt.plot(audio[row,:])
-		plt.subplot(2,1,2)
-		plt.plot(result_array[row,:]) 
-		plt.show()
+        if plot:
+            for row in range(0, result_array.shape[0], 250):
+                    plt.subplot(2,1,1)
+                    plt.plot(audio[row,:])
+                    plt.subplot(2,1,2)
+                    plt.plot(result_array[row,:]) 
+                    plt.show()
 	return result_array
 
 #####################################################
