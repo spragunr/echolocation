@@ -22,8 +22,8 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 def main():
 
 	# files 
-	model_file = 'model_checkers.h5' #v3, 1536
-	sets_file = 'sets_checkers.h5'
+	model_file = 'model_100t_rawA4.h5' 
+	sets_file = 'sets_100t_rawA.h5'
 
 	if not os.path.isfile(model_file):
 		print "building model..."
@@ -47,11 +47,6 @@ def main():
 ######################################################
 
 def build_and_train_model(x_train, y_train, model_file):
-	adam = optimizers.Adam(lr=0.001)
-	nadam = optimizers.Nadam(lr=0.002)
-	sgd = optimizers.SGD(lr=0.01)
-	RMSprop = optimizers.RMSprop(lr=0.0001)
-
 	net = Sequential()
 	net.add(Conv1D(64, (256),
 					strides=(26),
@@ -59,16 +54,18 @@ def build_and_train_model(x_train, y_train, model_file):
 					input_shape=x_train.shape[1:]))
 	net.add(Reshape((188,64,1)))
 	net.add(Conv2D(128, (5,5), activation='relu'))
+	net.add(Conv2D(128, (5,5), strides=(2,2), activation='relu'))
 	net.add(Conv2D(64, (5,5), strides=(2,2), activation='relu'))
 	net.add(Conv2D(32, (5,5), strides=(3,3), activation='relu'))
 	net.add(Flatten())
 	net.add(Dense(600, activation='relu'))
+	net.add(Dense(1200, activation='relu'))
 	net.add(Dense(600, activation='relu'))
 	net.add(Dense(300, activation='relu'))
 	net.add(Dense(192, activation='linear'))
 	net.compile(optimizer='adam', loss=adjusted_mse)
 	print "finished compiling"
-	net.fit(x_train, y_train, validation_split=0.2, epochs=50, batch_size=32)
+	net.fit(x_train, y_train, validation_split=0.2, epochs=150, batch_size=32)
 	net.save(model_file)
 	print "model saved as '%s'" %model_file
 	return net
