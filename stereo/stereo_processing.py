@@ -24,9 +24,9 @@ def main():
 	> spec_file - input spectrograms, needed for spectrogram version of NN only
 	> sets_file - training and test set of input-depth pairs 
 	'''
-	data_file = 'data_half.h5' #'cs_free.h5' 'bat_angled.h5' 
-	spec_file = 'spec_half.h5'
-	sets_file = 'sets_half_specA.h5'
+	data_file = '_data_100t.h5' #'cs_free.h5' 'bat_angled.h5' 
+	spec_file = 'spec_100t_specA.h5'
+	sets_file = 'sets_100t_rawA__.h5'
 
 	if len(argv) != 2: 
 		print "usage: stereo_processing.py input_type"
@@ -42,26 +42,6 @@ def main():
 	split_data(input_set, target, sets_file)
 
 ######################################################
-######################################################
-
-def downsize(img, factor=40):
-	'''
-	@PURPOSE: downsizes an image by a factor of its dimensions
-	@PARAMS: img - [numpy array] image to downsize 
-					 factor - [int] factor to downsize image by (default is 40)
-	@RETURN: [numpy array] downsized image
-	'''
-	orig_dims = img.shape
-	ds_dims = (orig_dims[0]/factor, orig_dims[1]/factor)
-	downsized_img = np.zeros(ds_dims)
-	for i in range(0,orig_dims[0],factor):
-		for j in range(0,orig_dims[1],factor):
-			window = img[i:i+factor, j:j+factor].flatten()
-			non_zero = np.delete(window, np.where(window==0))
-			if non_zero.size != 0:
-				downsized_img[i/factor,j/factor] = np.mean(non_zero)
-	return downsized_img
-
 ######################################################
 
 def get_data(filename):
@@ -80,8 +60,8 @@ def get_data(filename):
 	audio_list = []
 	depth_list = []
 	#path = os.getcwd()+'/' 
-	#path = '/media/hoangnt/seagate/legit_data/'
-	path = '/Volumes/seagate/legit_data/'
+	path = '/media/hoangnt/seagate/legit_data/'
+	#path = '/Volumes/seagate/legit_data/'
         for i in range(len(files)):
 		print "loading '%s' data..." %files[i]
 		#with np.load(path+files[i]+'.npz') as d:
@@ -93,10 +73,17 @@ def get_data(filename):
 	print "---------------------------------"
 	print "data loading complete\n"
 
-	print "aligning audio data..."
+	print "saving original data..."
 	audio_tuple = tuple(audio_list)
 	audio = np.concatenate(audio_tuple)
-	print audio.shape
+	depth_tuple = tuple(depth_list)
+	depth = np.concatenate(depth_tuple)
+	with h5py.File("original_100t_data.h5",'w') as og:
+		og.create_dataset('audio', data=audio)
+		og.create_dataset('depth', data=depth)
+	exit()
+
+	print "aligning audio data..."
 	aligned_audio = align_audio(5000, audio)
 
 	print "starting depth map downsizing..."
@@ -112,8 +99,7 @@ def get_data(filename):
 	with h5py.File(filename, 'w') as hf:
 		hf.create_dataset('audio', data=aligned_audio)
 		hf.create_dataset('depth', data=new_depth)
-	exit()
-
+	
 ######################################################
 
 def get_input(input_type, data_file, spec_file):
@@ -294,6 +280,11 @@ def split_data(x, y, sets_name):
 		xtrain = x[np.logical_not(xbool)].reshape(dims)
 		ytrain = y[np.logical_not(ybool)].reshape((-1,192))
 
+		# save indices of test samples for plotting
+		test_indices = np.where(xbool[:,0]==True)[0]
+		with h5py.File('test_indices_100t.h5','w') as i:
+			i.create_dataset('indices', data=test_indices)
+
 		print "shuffling for training set..."
 		combined = zip(xtrain, ytrain)
 		shuffle(combined)
@@ -338,6 +329,26 @@ def align_audio(threshold, audio, plot=False):
 	return result_array
 
 #####################################################
+
+def downsize(img, factor=40):
+	'''
+	@PURPOSE: downsizes an image by a factor of its dimensions
+	@PARAMS: img - [numpy array] image to downsize 
+					 factor - [int] factor to downsize image by (default is 40)
+	@RETURN: [numpy array] downsized image
+	'''
+	orig_dims = img.shape
+	ds_dims = (orig_dims[0]/factor, orig_dims[1]/factor)
+	downsized_img = np.zeros(ds_dims)
+	for i in range(0,orig_dims[0],factor):
+		for j in range(0,orig_dims[1],factor):
+			window = img[i:i+factor, j:j+factor].flatten()
+			non_zero = np.delete(window, np.where(window==0))
+			if non_zero.size != 0:
+				downsized_img[i/factor,j/factor] = np.mean(non_zero)
+	return downsized_img
+
+######################################################
 
 if __name__ == "__main__":
 	main()
