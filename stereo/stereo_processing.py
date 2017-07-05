@@ -24,9 +24,9 @@ def main():
 	> spec_file - input spectrograms, needed for spectrogram version of NN only
 	> sets_file - training and test set of input-depth pairs 
 	'''
-	data_file = '_data_100t.h5' #'cs_free.h5' 'bat_angled.h5' 
-	spec_file = 'spec_100t_specA.h5'
-	sets_file = 'sets_100t_rawA__.h5'
+	data_file = 'data_wall_angled.h5' #'cs_free.h5' 'bat_angled.h5' 
+	spec_file = 'spec_wall_angled_specA.h5'
+	sets_file = 'sets_wall_angled_rawA.h5'
 
 	if len(argv) != 2: 
 		print "usage: stereo_processing.py input_type"
@@ -54,36 +54,28 @@ def get_data(filename):
 #	files = ['forensics', 'isat243', 'isat246', 'isat248', 'office', 'stairwell', 'spine'] 
 #	files = ['test5','test6','test7','test8']
 #	files = ['leaves1','leaves2', 'hole1', 'hole2', 'hole3']
-#	files = ['new2', 'new3', 'new4', 'new5', 'new6', 'new7', 'new8', 'new9', 'new10', 'new11', 'new12', 'new13', 'new14', 'new15', 'new16']
-	files = ['isat143a','isat143b','isat231a','isat231b','isat243a','isat243b','isat246a','isat246b', 'isat246c', 'isat248a', 'isat248b', 'isat248c']
+	files = ['new2', 'new3', 'new4', 'new5', 'new6', 'new7', 'new8', 'new9', 'new10', 'new11', 'new12', 'new13', 'new14', 'new15', 'new16']
+#	files = ['isat143a','isat143b','isat231a','isat231b','isat243a','isat243b','isat246a','isat246b', 'isat246c', 'isat248a', 'isat248b', 'isat248c']
 
 	audio_list = []
 	depth_list = []
-	#path = os.getcwd()+'/' 
-	path = '/media/hoangnt/seagate/legit_data/'
+	path = os.getcwd()+'/data_stereo3/' 
+	#path = '/media/hoangnt/seagate/legit_data/'
 	#path = '/Volumes/seagate/legit_data/'
         for i in range(len(files)):
 		print "loading '%s' data..." %files[i]
-		#with np.load(path+files[i]+'.npz') as d:
-		#	audio_list.append(d['audio'])
-		#	depth_list.append(d['depth'])
-		with h5py.File(path+files[i], 'r') as d:
-			audio_list.append(d['audio'].value)
-			depth_list.append(d['depth'].value)
+		with np.load(path+files[i]+'.npz') as d:
+			audio_list.append(d['audio'])
+			depth_list.append(d['depth'])
+		#with h5py.File(path+files[i], 'r') as d:
+			#audio_list.append(d['audio'].value)
+			#depth_list.append(d['depth'].value)
 	print "---------------------------------"
 	print "data loading complete\n"
 
-	print "saving original data..."
+	print "aligning audio data..."
 	audio_tuple = tuple(audio_list)
 	audio = np.concatenate(audio_tuple)
-	depth_tuple = tuple(depth_list)
-	depth = np.concatenate(depth_tuple)
-	with h5py.File("original_100t_data.h5",'w') as og:
-		og.create_dataset('audio', data=audio)
-		og.create_dataset('depth', data=depth)
-	exit()
-
-	print "aligning audio data..."
 	aligned_audio = align_audio(5000, audio)
 
 	print "starting depth map downsizing..."
