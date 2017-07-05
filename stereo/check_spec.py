@@ -5,15 +5,18 @@ from sys import argv
 import h5py
 import matplotlib.pyplot as plt
 import numpy as np 
+import os
 
-path = '/Volumes/seagate/legit_data/'
-files = ['isat143a','isat143b','isat231a','isat231b','isat243a','isat243b','isat246a','isat246b','isat246c','isat248a','isat248b','isat248c']
+#path = '/Volumes/seagate/legit_data/'
+#files = ['isat143a','isat143b','isat231a','isat231b','isat243a','isat243b','isat246a','isat246b','isat246c','isat248a','isat248b','isat248c']
+path = os.getcwd()+'/'
+files = ['data_100t.h5']
 
 audio_list = []
 
 for i in range(len(files)):
 	with h5py.File(path+files[i], 'r') as d:
-		audio_list.append(d['audio'].value[3358:3360])
+		audio_list.append(d['audio'].value[3358:3370])
 audio_tuple = tuple(audio_list)
 audio = np.concatenate(audio_tuple)
 aligned_audio = align_audio(5000, audio, plot=True)
