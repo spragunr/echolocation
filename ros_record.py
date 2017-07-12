@@ -62,10 +62,10 @@ class Recorder(object):
         rate = self.chirp_file.getframerate()
         self.chirp_index = 0 # where are we in the current chirp (used
                              # by callback)
-        self.blocksize = 256
+        self.blocksize = 128
         self.cur_block = 0 # used by callblack to count blocks in the
                            # current chirp
-        self.record_delay = .05 # at least (will be somewhat more...)
+        self.record_delay = .085 # at least (will be somewhat more...)
         self.record_delay_blocks = np.ceil(self.record_delay /
                                            (self.blocksize / float(rate)))
         self.record_blocks = np.ceil(self.record_duration /
@@ -133,10 +133,22 @@ class Recorder(object):
                     self.h5_append(self.rgb_set, index, rgb_image)
 
                 self.h5_append(self.time_set, index, last_storage_time)
+                print stream.cpu_load
                 index += 1
             else:
                 self.lock.release()
 
+            if not stream.active:
+                print "restarting stream..."
+                stream.close()
+                stream = sd.Stream(device=(None, None),
+                           samplerate=self.chirp_file.getframerate(),
+                           blocksize=self.blocksize, dtype='int16',
+                           channels=(self.channels,
+                                     self.chirp_file.getnchannels()),
+                           callback=self.audio_callback)
+                stream.start()
+                
             rate.sleep()
 
         # MAIN LOOP COMPLETE...
@@ -182,8 +194,10 @@ class Recorder(object):
             self.cur_block = -1
 
         self.cur_block += 1
-
         
+        if status:
+            print status
+            
     def parse_command_line(self):
 
         parser = argparse.ArgumentParser(
@@ -205,7 +219,7 @@ class Recorder(object):
                             default=.06, help='duration of audio recordings')
 
         parser.add_argument('--volume', type=int, metavar="VOLUME",
-                            default=100, help='volume (0-100)')
+                            default=75, help='volume (0-100), default 75')
         parser.add_argument('--mic-level', type=int, metavar="MIC_LEVEL",
                             dest='mic_level',
                             default=100, help='mic_level (0-100)')
@@ -213,7 +227,7 @@ class Recorder(object):
         parser.add_argument('-c', '--chirp-file', type=str,
                             dest='chirp_file_name',                            
                             metavar="CHIRP_FILE",
-                            default='data/20000to12000.02s.wav',
+                            default='data/16000to8000.02s.wav',
                             help='Location of .wav file.')
 
 
@@ -232,7 +246,7 @@ class Recorder(object):
                                                      maxshape=(None,
                                                                test_audio.shape[0],
                                                                self.channels),
-                                                     compression="lzf",
+#                                                     compression="lzf",
                                                      dtype=np.int16)
 
 
@@ -243,7 +257,7 @@ class Recorder(object):
                                                 maxshape=(None,
                                                           depth_shape[0],
                                                           depth_shape[1]),
-                                                     compression="lzf",
+#                                                     compression="lzf",
                                                 dtype=self.latest_depth.dtype)
         if self.record_rgb:
             rgb_shape = self.latest_rgb.shape
@@ -255,11 +269,11 @@ class Recorder(object):
                                                                  rgb_shape[0],
                                                                  rgb_shape[1],
                                                                  rgb_shape[2]),
-                                                       compression="lzf",
+#                                                       compression="lzf",
                                                        dtype=self.latest_rgb.dtype)
         self.time_set = self.h5_file.create_dataset('time', (1,),
                                                      maxshape=(None,),
-                                                    compression="lzf",
+#                                                    compression="lzf",
                                                      dtype=np.float64)
 
     def close_file(self, num_recorded):
