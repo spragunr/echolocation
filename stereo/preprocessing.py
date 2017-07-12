@@ -23,14 +23,14 @@ def main():
 	> train_files - 
 	> test_files - 
 	'''
-	train_files = []
-	test_files = []
+	train_files = ['/data_stereo/forensics']
+	test_files = ['/data_stereo/spine']
 	
 	if len(argv) != 2: 
-		print "usage: stereo_processing.py data_set_name"
+		print "usage: preprocessing.py data_set_name"
 		return
 	
-	specs_file = argv[1] + '_specs.h5' #contains just the spectrograms (datasets: 'train_specs' and 'test_specs')
+	#both sets contain the corresponding depths too
 	spec_sets = argv[1] + '_spec_input.h5' #contains train and test sets with spec input
 	da_sets = argv[1] + '_da_input.h5' #contains train and test sets with digital audio input
 
@@ -40,7 +40,7 @@ def main():
 
 	train_set, test_set = concatenate(train_files, test_files)
 	train_da, test_da = shape_digital_audio(train_set[0], test_set[0])
-	train_specs, test_specs = shape_spectrograms(train_set[0], test_set[0], specs_file)
+	train_specs, test_specs = shape_spectrograms(train_set[0], test_set[0])
 	save_spec_sets(spec_sets, train_specs, test_specs, train_set[1], test_set[1])
 	save_da_sets(da_sets, train_da, test_da, train_set[1], test_set[1])
 
@@ -151,7 +151,7 @@ def shape_digital_audio(train_audio, test_audio):
 
 ######################################################
 
-def shape_spectrograms(train_audio, test_audio, specs_file):
+def shape_spectrograms(train_audio, test_audio):
 	top_crop = 68
 	bot_crop = -34
 
@@ -197,10 +197,6 @@ def shape_spectrograms(train_audio, test_audio, specs_file):
 		combined = np.reshape(combined, (dims[0], dims[1], 1))
 		test_input[i,:,:,:] = combined
 
-	print "saving spectrograms as '%s'..." %specs_file
-	with h5py.File(specs_file, 'w') as sgrams:
-		sgrams.create_dataset('train_specs', data=train_input)
-		sgrams.create_dataset('test_specs', data=test_input)
 	return train_input, test_input
 
 ######################################################
