@@ -30,7 +30,7 @@ def main():
 		print "usage: preprocessing.py data_set_name"
 		return
 	
-	#both sets contain the corresponding depths too
+	#both sets contain the corresponding depths and RGB images too
 	spec_sets = argv[1] + '_spec_input.h5' #contains train and test sets with spec input
 	da_sets = argv[1] + '_da_input.h5' #contains train and test sets with digital audio input
 
@@ -38,10 +38,10 @@ def main():
 		print "preprocessed training and test sets already exist under files %s and %s" %(spec_sets,da_sets)
 		return
 
-	train_set, test_set = concatenate(train_files, test_files)
+	train_set, test_set = concatenate(train_files, test_files) # [0]audio [1]depth [2]rgb
 	train_da, test_da = shape_digital_audio(train_set[0], test_set[0])
 	train_specs, test_specs = shape_spectrograms(train_set[0], test_set[0])
-	save_spec_sets(spec_sets, train_specs, test_specs, train_set[1], test_set[1],train_set[2], test_set[2])
+	save_spec_sets(spec_sets, train_specs, test_specs, train_set[1], test_set[1], train_set[2], test_set[2])
 	save_da_sets(da_sets, train_da, test_da, train_set[1], test_set[1], train_set[2], test_set[2])
 
 ######################################################
@@ -54,8 +54,8 @@ def concatenate(train_files, test_files):
 	test_audio_list = []
 	train_depth_list = []
 	test_depth_list = []
-        train_rgb_list = []
-        test_rgb_list = []
+	train_rgb_list = []
+	test_rgb_list = []
 
 	path = os.getcwd()+'/' 
 	#path = '/media/hoangnt/seagate/legit_data/'
@@ -65,24 +65,25 @@ def concatenate(train_files, test_files):
 		#with np.load(path+train_files[i]+'.npz') as d:
 			#train_audio_list.append(d['audio'])
 			#train_depth_list.append(d['depth'])
-                        #train_rgb_list.append(d['rgb'])
+			#train_rgb_list.append(d['rgb'])
 		with h5py.File(path+train_files[i], 'r') as d:
 			train_audio_list.append(d['audio'].value)
 			train_depth_list.append(d['depth'].value)
-                        train_rgb_list.append(d['rgb'].value)
+			train_rgb_list.append(d['rgb'].value)
 	for i in range(len(test_files)):
 		print "TEST FILES: loading '%s' data..." %test_files[i]
 		#with np.load(path+test_files[i]+'.npz') as d:
 			#test_audio_list.append(d['audio'])
 			#test_depth_list.append(d['depth'])
-                        #test_rgb_list.append(d['rgb'])
+			#test_rgb_list.append(d['rgb'])
 		with h5py.File(path+test_files[i], 'r') as d:
 			test_audio_list.append(d['audio'].value)
 			test_depth_list.append(d['depth'].value)
-                        test_rgb_list.append(d['rgb'].value)
+			test_rgb_list.append(d['rgb'].value)
 	print "---------------------------------"
 	print "data loading complete\n"
 	
+	## AUDIO ##
 	print "concatenating training audio..."
 	train_audio_tuple = tuple(train_audio_list)
 	train_audio = np.concatenate(train_audio_tuple)
@@ -92,15 +93,7 @@ def concatenate(train_files, test_files):
 	test_audio = np.concatenate(test_audio_tuple)
 	test_set.append(test_audio)
 
-        print "concatenating training rgb..."
-        train_rgb_tuple = tuple(train_rgb_list)
-        train_rgb = np.concatenate(train_rgb_tuple)
-        train_set.append(train_rgb)
-        print "concatenating test rgb..."
-        test_rgb_tuple = tuple(test_rgb_list)
-        test_rgb = np.concatenate(test_rgb_tuple)
-        test_set.append(test_rgb)
-
+	## DEPTH ##
 	train_depth = np.empty((train_audio.shape[0],12,16))
 	counter = 0
 	for d_file in train_depth_list:
@@ -117,6 +110,24 @@ def concatenate(train_files, test_files):
 			test_depth[counter] = downsize(d_map)
 			counter += 1
 	test_set.append(train_depth)
+
+	## RGB ##
+	train_rgb = np.empty((train_audio.shape[0],24,32))
+	counter = 0
+	for rgb_file in train_rgb_list:
+		for rgb_map in rgb_file:
+			print "TRAINING: downsizing rgb map", counter
+			train_rgb[counter] = downsize(rgb_map, factor=20)
+			counter += 1
+	train_set.append(train_rgb)
+	test_rgb = np.empty((test_audio.shape[0],24,32))
+	counter = 0
+	for rgb_file in test_rgb_list:
+		for rgb_map in rgb_file:
+			print "TEST: downsizing rgb map", counter
+			test_rgb[counter] = downsize(rgb_map, factor=20)
+			counter += 1
+	test_set.append(train_rgb)
 
 	return train_set, test_set
 
@@ -223,8 +234,8 @@ def save_spec_sets(spec_sets, train_specs, test_specs, train_depths, test_depths
 		sets.create_dataset('train_depths', data=train_depths)
 		sets.create_dataset('test_specs', data=test_specs)
 		sets.create_dataset('test_depths', data=test_depths)
-                sets.create_dataset('train_rgb', data=train_rgb)
-                sets.create_dataset('test_rgb', data=test_rgb)
+		sets.create_dataset('train_rgb', data=train_rgb)
+		sets.create_dataset('test_rgb', data=test_rgb)
 	print "training and test sets saved as '%s'" %spec_sets
 
 ######################################################
@@ -236,8 +247,8 @@ def save_da_sets(da_sets, train_da, test_da, train_depths, test_depths, train_rg
 		sets.create_dataset('train_depths', data=train_depths)
 		sets.create_dataset('test_da', data=test_da)
 		sets.create_dataset('test_depths', data=test_depths)
-                sets.create_dataset('train_rgb', data=train_rgb)
-                sets.create_dataset('test_rgb', data=test_rgb)
+		sets.create_dataset('train_rgb', data=train_rgb)
+		sets.create_dataset('test_rgb', data=test_rgb)
 	print "training and test sets saved as '%s'" %da_sets
 
 ######################################################
