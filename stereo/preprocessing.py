@@ -41,8 +41,8 @@ def main():
 	train_set, test_set = concatenate(train_files, test_files)
 	train_da, test_da = shape_digital_audio(train_set[0], test_set[0])
 	train_specs, test_specs = shape_spectrograms(train_set[0], test_set[0])
-	save_spec_sets(spec_sets, train_specs, test_specs, train_set[1], test_set[1])
-	save_da_sets(da_sets, train_da, test_da, train_set[1], test_set[1])
+	save_spec_sets(spec_sets, train_specs, test_specs, train_set[1], test_set[1],train_set[2], test_set[2])
+	save_da_sets(da_sets, train_da, test_da, train_set[1], test_set[1], train_set[2], test_set[2])
 
 ######################################################
 ######################################################
@@ -54,26 +54,32 @@ def concatenate(train_files, test_files):
 	test_audio_list = []
 	train_depth_list = []
 	test_depth_list = []
+        train_rgb_list = []
+        test_rgb_list = []
 
 	path = os.getcwd()+'/' 
 	#path = '/media/hoangnt/seagate/legit_data/'
 	#path = '/Volumes/seagate/legit_data/'
 	for i in range(len(train_files)):
 		print "TRAINING FILES: loading '%s' data..." %train_files[i]
-		with np.load(path+train_files[i]+'.npz') as d:
-			train_audio_list.append(d['audio'])
-			train_depth_list.append(d['depth'])
-		#with h5py.File(path+train_files[i], 'r') as d:
-			#train_audio_list.append(d['audio'].value)
-			#train_depth_list.append(d['depth'].value)
+		#with np.load(path+train_files[i]+'.npz') as d:
+			#train_audio_list.append(d['audio'])
+			#train_depth_list.append(d['depth'])
+                        #train_rgb_list.append(d['rgb'])
+		with h5py.File(path+train_files[i], 'r') as d:
+			train_audio_list.append(d['audio'].value)
+			train_depth_list.append(d['depth'].value)
+                        train_rgb_list.append(d['rgb'].value)
 	for i in range(len(test_files)):
 		print "TEST FILES: loading '%s' data..." %test_files[i]
-		with np.load(path+test_files[i]+'.npz') as d:
-			test_audio_list.append(d['audio'])
-			test_depth_list.append(d['depth'])
-		#with h5py.File(path+test_files[i], 'r') as d:
-			#test_audio_list.append(d['audio'].value)
-			#test_depth_list.append(d['depth'].value)
+		#with np.load(path+test_files[i]+'.npz') as d:
+			#test_audio_list.append(d['audio'])
+			#test_depth_list.append(d['depth'])
+                        #test_rgb_list.append(d['rgb'])
+		with h5py.File(path+test_files[i], 'r') as d:
+			test_audio_list.append(d['audio'].value)
+			test_depth_list.append(d['depth'].value)
+                        test_rgb_list.append(d['rgb'].value)
 	print "---------------------------------"
 	print "data loading complete\n"
 	
@@ -85,6 +91,15 @@ def concatenate(train_files, test_files):
 	test_audio_tuple = tuple(test_audio_list)
 	test_audio = np.concatenate(test_audio_tuple)
 	test_set.append(test_audio)
+
+        print "concatenating training rgb..."
+        train_rgb_tuple = tuple(train_rgb_list)
+        train_rgb = np.concatenate(train_rgb_tuple)
+        train_set.append(train_rgb)
+        print "concatenating test rgb..."
+        test_rgb_tuple = tuple(test_rgb_list)
+        test_rgb = np.concatenate(test_rgb_tuple)
+        test_set.append(test_rgb)
 
 	train_depth = np.empty((train_audio.shape[0],12,16))
 	counter = 0
@@ -201,24 +216,28 @@ def shape_spectrograms(train_audio, test_audio):
 
 ######################################################
 
-def save_spec_sets(spec_sets, train_specs, test_specs, train_depths, test_depths):
+def save_spec_sets(spec_sets, train_specs, test_specs, train_depths, test_depths, train_rgb, test_rgb):
 	print "saving sets (with spectrograms as input)..."
 	with h5py.File(spec_sets, 'w') as sets:
 		sets.create_dataset('train_specs', data=train_specs)
 		sets.create_dataset('train_depths', data=train_depths)
 		sets.create_dataset('test_specs', data=test_specs)
 		sets.create_dataset('test_depths', data=test_depths)
+                sets.create_dataset('train_rgb', data=train_rgb)
+                sets.create_dataset('test_rgb', data=test_rgb)
 	print "training and test sets saved as '%s'" %spec_sets
 
 ######################################################
 
-def save_da_sets(da_sets, train_da, test_da, train_depths, test_depths):
+def save_da_sets(da_sets, train_da, test_da, train_depths, test_depths, train_rgb, test_rgb):
 	print "saving sets (with digital audio as input)..."
 	with h5py.File(da_sets, 'w') as sets:
 		sets.create_dataset('train_da', data=train_da)
 		sets.create_dataset('train_depths', data=train_depths)
 		sets.create_dataset('test_da', data=test_da)
 		sets.create_dataset('test_depths', data=test_depths)
+                sets.create_dataset('train_rgb', data=train_rgb)
+                sets.create_dataset('test_rgb', data=test_rgb)
 	print "training and test sets saved as '%s'" %da_sets
 
 ######################################################
