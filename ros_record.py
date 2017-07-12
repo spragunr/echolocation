@@ -3,20 +3,22 @@
 """Ros node for playing audio chirps and recording the returns along
 with data from a depth camera.
 
-This requires that the depth camera and the sound play node have been
-started (in a separate terminal.):
+This requires that the depth camera has been started (in a separate
+terminal.):
 
 source ./ros_config_account.sh
 
 roslaunch openni2_launch openni2.launch
-roslaunch sound_play soundplay_node.launch
 
 """
+import time
 import subprocess
-import h5py
+import wave
 import threading
-import sys
 import argparse
+
+import h5py
+import scipy.io.wavfile
 import numpy as np
 
 import rospy
@@ -24,15 +26,12 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import message_filters
 
-from sound_play.libsoundplay import SoundClient
-
-from pyaudio_utils import AudioPlayer, AudioRecorder
+import sounddevice as sd
 
 class Recorder(object):
 
     def __init__(self):
         rospy.init_node('ros_record')
-
 
         self.parse_command_line()
 
@@ -41,16 +40,11 @@ class Recorder(object):
         subprocess.call(["amixer", "-D", "pulse", "sset",
                          "Capture", "{}%".format(self.mic_level)])
 
-        
         self.lock = threading.Lock()
 
         self.bridge = CvBridge()
         self.latest_depth = None
         self.latest_rgb = None
-
-        self.soundhandle = SoundClient(blocking=False)
-        #self.audio_player = AudioPlayer(self.chirp_file)
-        self.audio_recorder = AudioRecorder(channels=self.channels)
 
         if not self.record_rgb:
             rospy.Subscriber('/camera/depth/image_raw', Image,
@@ -62,62 +56,133 @@ class Recorder(object):
             ts = message_filters.ApproximateTimeSynchronizer([ds, rgbs], 10, .03)
             ts.registerCallback(self.depth_rgb_callback)
 
+
+        # start audio, and wait for first audio sample
+        self.chirp_file = wave.open(self.chirp_file_name, 'rb')
+        rate = self.chirp_file.getframerate()
+        self.chirp_index = 0 # where are we in the current chirp (used
+                             # by callback)
+        self.blocksize = 256
+        self.cur_block = 0 # used by callblack to count blocks in the
+                           # current chirp
+        self.record_delay = .05 # at least (will be somewhat more...)
+        self.record_delay_blocks = np.ceil(self.record_delay /
+                                           (self.blocksize / float(rate)))
+        self.record_blocks = np.ceil(self.record_duration /
+                                     (self.blocksize / float(rate)))
+        self.chirp_delay = 0
+        self.chirp_delay_blocks = np.ceil(self.chirp_delay /
+                                          (self.blocksize / float(rate)))
+        self.total_blocks = (self.record_blocks + self.record_delay_blocks +
+                             self.chirp_delay_blocks)
+        self.record_index = 0
+        self.latest_recording = None
+        self.latest_recording_time = -1;
+        self.current_recording = np.zeros((int(self.record_blocks *
+                                               self.blocksize),
+                                           self.channels),
+                                          dtype='int16')
+
+        f = open(self.chirp_file_name, 'rb')
+        self.chirp_data = scipy.io.wavfile.read(f)[1]
+        if len(self.chirp_data.shape) == 1:
+            self.chirp_data = self.chirp_data.reshape((-1, 1))
+
+
+        stream = sd.Stream(device=(None, None),
+                           samplerate=self.chirp_file.getframerate(),
+                           blocksize=self.blocksize, dtype='int16',
+                           channels=(self.channels,
+                                     self.chirp_file.getnchannels()),
+                           callback=self.audio_callback)
+
+
+        stream.start()
+
         while self.latest_depth is None and not rospy.is_shutdown():
             rospy.loginfo("WAITING FOR CAMERA DATA.")
             rospy.sleep(.1)
 
+        while self.latest_recording is None and not rospy.is_shutdown():
+            rospy.loginfo("WAITING FOR AUDIO DATA.")
+            rospy.sleep(.1)
+
         self.init_data_sets()
 
-        rate = rospy.Rate(self.rate)
+        rate = rospy.Rate(60)
         index = 0
 
+        last_storage_time = -1
         # MAIN LOOP
         while not rospy.is_shutdown():
-
-            if self.record_rgb:
-                self.lock.acquire()
+            
+            self.lock.acquire()
+            if last_storage_time != self.latest_recording_time:
+                # grab latest data
+                audio = self.latest_recording
                 depth_image = self.latest_depth
-                rgb_image = self.latest_rgb
+                if self.record_rgb:
+                    rgb_image = self.latest_rgb
+                last_storage_time = self.latest_recording_time
                 self.lock.release()
+                
+                # store on disk
                 self.h5_append(self.depth_set, index, depth_image)
-                self.h5_append(self.rgb_set, index, rgb_image)
+                self.h5_append(self.audio_set, index, self.latest_recording)
+                if self.record_rgb:
+                    self.h5_append(self.rgb_set, index, rgb_image)
+
+                self.h5_append(self.time_set, index, last_storage_time)
+                index += 1
             else:
-                depth_image = self.latest_depth
-                self.h5_append(self.depth_set, index, depth_image)
-
-
-            # Play and record audio
-            #self.audio_player.play()
-            self.soundhandle.playWave(self.chirp_file)
-            rospy.sleep(.04) # hack.  it takes the sound a while to play...
-            self.audio_recorder.record(self.record_duration)
-            #self.soundhandle.playWave(self.chirp_file)
-
-            audio = self.record()
-
-            self.h5_append(self.audio_set, index, audio)
-
-            index += 1
+                self.lock.release()
 
             rate.sleep()
 
+        # MAIN LOOP COMPLETE...
+        stream.stop()
+        stream.close()
+        self.close_file(index - 1)
 
-        self.close_file(index-1)
-        #self.audio_player.shutdown()
-        self.audio_recorder.shutdown()
+
+    def audio_callback(self, indata, outdata, frames, callback_time, status):
+        
+        # HANDLE PLAYBACK
+        if self.chirp_index != -1:
+            if self.chirp_index + frames <= self.chirp_data.shape[0]:
+                outdata[:,...] = self.chirp_data[self.chirp_index:self.chirp_index+frames,...]
+                self.chirp_index += frames
+            else:
+                left = self.chirp_data.shape[0] - self.chirp_index
+                outdata[0:left, ...] = self.chirp_data[self.chirp_index::, ...]
+                outdata[left::,...] = np.zeros((frames - left, self.chirp_data.shape[1]))
+                self.chirp_index = -1
+        else:
+            outdata[:] =  np.zeros(outdata.shape)
 
 
-    def record(self):
-        self.audio_recorder.record(self.record_duration)
-        while not self.audio_recorder.done_recording():
-            rospy.sleep(.005)
-                
-        audio = self.audio_recorder.get_data()[1]
+        # HANDLE RECORDING
+        # If we need to store the current audio block...
+        if (self.cur_block >= self.record_delay_blocks and
+            self.cur_block < self.record_delay_blocks + self.record_blocks):
+            self.current_recording[self.record_index:self.record_index+frames,...] = indata
+            self.record_index += frames
+            
+        # If we just stored the last block...
+        if (self.cur_block == self.record_delay_blocks + self.record_blocks - 1):
+            self.lock.acquire()
+            
+            self.latest_recording = np.array(self.current_recording)
+            self.latest_recording_time = time.time()
+            self.lock.release()
 
-        # Reshape mono to be consistent with stereo
-        if (len(audio.shape) == 1):
-            audio = audio.reshape((-1, 1))
-        return audio
+        if self.cur_block >= self.total_blocks:
+            self.chirp_index = 0
+            self.record_index = 0
+            self.cur_block = -1
+
+        self.cur_block += 1
+
         
     def parse_command_line(self):
 
@@ -145,8 +210,10 @@ class Recorder(object):
                             dest='mic_level',
                             default=100, help='mic_level (0-100)')
 
-        parser.add_argument('-c', '--chirp-file', type=str, metavar="CHIRP_FILE",
-                            default='/home/hoangnt/echolocation/data/20000to12000.02s.wav',
+        parser.add_argument('-c', '--chirp-file', type=str,
+                            dest='chirp_file_name',                            
+                            metavar="CHIRP_FILE",
+                            default='data/20000to12000.02s.wav',
                             help='Location of .wav file.')
 
 
@@ -158,12 +225,14 @@ class Recorder(object):
 
     def init_data_sets(self):
         self.h5_file = h5py.File(self.out, 'w')
-        test_audio = self.record()
-        self.audio_set = self.h5_file.create_dataset('audio',
-                                                     (1, test_audio.shape[0], self.channels),
+        test_audio = self.latest_recording
+        self.audio_set = self.h5_file.create_dataset('audio', (1,
+                                                               test_audio.shape[0],
+                                                               self.channels),
                                                      maxshape=(None,
                                                                test_audio.shape[0],
                                                                self.channels),
+                                                     compression="lzf",
                                                      dtype=np.int16)
 
 
@@ -174,6 +243,7 @@ class Recorder(object):
                                                 maxshape=(None,
                                                           depth_shape[0],
                                                           depth_shape[1]),
+                                                     compression="lzf",
                                                 dtype=self.latest_depth.dtype)
         if self.record_rgb:
             rgb_shape = self.latest_rgb.shape
@@ -185,7 +255,12 @@ class Recorder(object):
                                                                  rgb_shape[0],
                                                                  rgb_shape[1],
                                                                  rgb_shape[2]),
+                                                       compression="lzf",
                                                        dtype=self.latest_rgb.dtype)
+        self.time_set = self.h5_file.create_dataset('time', (1,),
+                                                     maxshape=(None,),
+                                                    compression="lzf",
+                                                     dtype=np.float64)
 
     def close_file(self, num_recorded):
         self.audio_set.resize(tuple([num_recorded] +
@@ -196,6 +271,7 @@ class Recorder(object):
         if self.record_rgb:
             self.rgb_set.resize(tuple([num_recorded] +
                                       list(self.rgb_set.shape[1:])))
+        self.time_set.resize((num_recorded,))
 
         self.h5_file.close()
 

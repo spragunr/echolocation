@@ -127,6 +127,7 @@ class AudioRecorder(object):
     def callback(self, in_data, frame_count, time_info, status):
         self.num_callbacks += 1
         self.wavefile.writeframes(in_data)
+        print "status", status
         if self.num_callbacks < self.target_callbacks:
             return in_data, pyaudio.paContinue
         else:
@@ -137,13 +138,14 @@ class AudioRecorder(object):
 
 
 if __name__ == "__main__":
-    player = AudioPlayer('data/chirp.wav')
+    player = AudioPlayer('data/test.wav')
     player.play()
 
     recorder = AudioRecorder()
     recorder.record(2)
     
     while player.is_playing() or not recorder.done_recording():
+        recorder.record(.04)
         time.sleep(.05)
 
     print recorder.get_data()
