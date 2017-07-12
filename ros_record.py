@@ -56,48 +56,7 @@ class Recorder(object):
             ts = message_filters.ApproximateTimeSynchronizer([ds, rgbs], 10, .03)
             ts.registerCallback(self.depth_rgb_callback)
 
-
-        # start audio, and wait for first audio sample
-        self.chirp_file = wave.open(self.chirp_file_name, 'rb')
-        rate = self.chirp_file.getframerate()
-        self.chirp_index = 0 # where are we in the current chirp (used
-                             # by callback)
-        self.blocksize = 128
-        self.cur_block = 0 # used by callblack to count blocks in the
-                           # current chirp
-        self.record_delay = .085 # at least (will be somewhat more...)
-        self.record_delay_blocks = np.ceil(self.record_delay /
-                                           (self.blocksize / float(rate)))
-        self.record_blocks = np.ceil(self.record_duration /
-                                     (self.blocksize / float(rate)))
-        self.chirp_delay = 0
-        self.chirp_delay_blocks = np.ceil(self.chirp_delay /
-                                          (self.blocksize / float(rate)))
-        self.total_blocks = (self.record_blocks + self.record_delay_blocks +
-                             self.chirp_delay_blocks)
-        self.record_index = 0
-        self.latest_recording = None
-        self.latest_recording_time = -1;
-        self.current_recording = np.zeros((int(self.record_blocks *
-                                               self.blocksize),
-                                           self.channels),
-                                          dtype='int16')
-
-        f = open(self.chirp_file_name, 'rb')
-        self.chirp_data = scipy.io.wavfile.read(f)[1]
-        if len(self.chirp_data.shape) == 1:
-            self.chirp_data = self.chirp_data.reshape((-1, 1))
-
-
-        stream = sd.Stream(device=(None, None),
-                           samplerate=self.chirp_file.getframerate(),
-                           blocksize=self.blocksize, dtype='int16',
-                           channels=(self.channels,
-                                     self.chirp_file.getnchannels()),
-                           callback=self.audio_callback)
-
-
-        stream.start()
+        self.init_audio()
 
         while self.latest_depth is None and not rospy.is_shutdown():
             rospy.loginfo("WAITING FOR CAMERA DATA.")
@@ -112,18 +71,17 @@ class Recorder(object):
         rate = rospy.Rate(60)
         index = 0
 
-        last_storage_time = -1
         # MAIN LOOP
         while not rospy.is_shutdown():
             
             self.lock.acquire()
-            if last_storage_time != self.latest_recording_time:
+            if self.last_storage_time != self.latest_recording_time:
                 # grab latest data
                 audio = self.latest_recording
                 depth_image = self.latest_depth
                 if self.record_rgb:
                     rgb_image = self.latest_rgb
-                last_storage_time = self.latest_recording_time
+                self.last_storage_time = self.latest_recording_time
                 self.lock.release()
                 
                 # store on disk
@@ -132,32 +90,78 @@ class Recorder(object):
                 if self.record_rgb:
                     self.h5_append(self.rgb_set, index, rgb_image)
 
-                self.h5_append(self.time_set, index, last_storage_time)
-                print stream.cpu_load
+                self.h5_append(self.time_set, index, self.last_storage_time)
+                print index, self.stream.latency
                 index += 1
             else:
                 self.lock.release()
 
-            if not stream.active:
+            if not self.stream.active:
                 print "restarting stream..."
-                stream.close()
-                stream = sd.Stream(device=(None, None),
+                self.stream.close()
+                self.init_audio()
+                
+            rate.sleep()
+
+        # MAIN LOOP COMPLETE...
+        self.stream.stop()
+        self.stream.close()
+        self.close_file(index - 1)
+
+    def reset_audio_counters(self):
+        self.last_storage_time = -1
+        self.chirp_index = 0 # where are we in the current chirp (used
+                             # by callback)
+        self.cur_block = 0 # used by callblack to count blocks in the
+                           # current chirp
+        self.record_index = 0
+        self.latest_recording_time = -1;
+
+    def init_audio(self):
+        # start audio, and wait for first audio sample
+        self.reset_audio_counters()
+        self.chirp_file = wave.open(self.chirp_file_name, 'rb')
+        rate = self.chirp_file.getframerate()
+        self.blocksize = 128
+        self.record_delay = .085 # at least (will be somewhat more...)
+        self.record_delay_blocks = np.ceil(self.record_delay /
+                                           (self.blocksize / float(rate)))
+        self.record_blocks = np.ceil(self.record_duration /
+                                     (self.blocksize / float(rate)))
+        self.chirp_delay = 0
+        self.chirp_delay_blocks = np.ceil(self.chirp_delay /
+                                          (self.blocksize / float(rate)))
+        self.total_blocks = (self.record_blocks + self.record_delay_blocks +
+                             self.chirp_delay_blocks)
+        print "TOTAL_BLOCKS", self.total_blocks
+        self.latest_recording = None
+        self.current_recording = np.zeros((int(self.record_blocks *
+                                               self.blocksize),
+                                           self.channels),
+                                          dtype='int16')
+
+        f = open(self.chirp_file_name, 'rb')
+        self.chirp_data = scipy.io.wavfile.read(f)[1]
+        if len(self.chirp_data.shape) == 1:
+            self.chirp_data = self.chirp_data.reshape((-1, 1))
+
+
+        self.stream = sd.Stream(device=(None, None),
                            samplerate=self.chirp_file.getframerate(),
                            blocksize=self.blocksize, dtype='int16',
                            channels=(self.channels,
                                      self.chirp_file.getnchannels()),
                            callback=self.audio_callback)
-                stream.start()
-                
-            rate.sleep()
-
-        # MAIN LOOP COMPLETE...
-        stream.stop()
-        stream.close()
-        self.close_file(index - 1)
 
 
+        self.stream.start()
+
+        
     def audio_callback(self, indata, outdata, frames, callback_time, status):
+        if status:
+            self.stream.close()
+            print status
+            return
         
         # HANDLE PLAYBACK
         if self.chirp_index != -1:
@@ -193,10 +197,11 @@ class Recorder(object):
             self.record_index = 0
             self.cur_block = -1
 
+        print callback_time.inputBufferAdcTime, callback_time.outputBufferDacTime
+        
         self.cur_block += 1
         
-        if status:
-            print status
+
             
     def parse_command_line(self):
 

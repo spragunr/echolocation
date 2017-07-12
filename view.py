@@ -19,6 +19,7 @@ while True:
         
         plt.subplot(rows,5,2 + 5 * row)
         plt.plot(data['audio'][i + row,:,:])
+        plt.ylim([-2**15, 2**15])
         
         plt.subplot(rows,5,3 + 5 * row)
         f, t, Sxx = signal.spectrogram(data['audio'][i + row,:,0], 44100, nperseg=256,
