@@ -27,22 +27,19 @@ def main():
 	test_files = ['/data_stereo/spine']
 	
 	if len(argv) != 2: 
-		print "usage: preprocessing.py data_set_name"
+		print "usage: preprocessing.py collective_data_name"
 		return
 	
-	#both sets contain the corresponding depths and RGB images too
-	spec_sets = argv[1] + '_spec_input.h5' #contains train and test sets with spec input
-	da_sets = argv[1] + '_da_input.h5' #contains train and test sets with digital audio input
+	sets_file = argv[1] + '_sets.h5' #contains the components of the training and test sets 
 
-	if os.path.isfile(spec_sets) and os.path.isfile(da_sets):
-		print "preprocessed training and test sets already exist under files %s and %s" %(spec_sets,da_sets)
+	if os.path.isfile(sets_file):
+		print "preprocessed training and test sets already exist under file %s" %sets_file
 		return
 
 	train_set, test_set = concatenate(train_files, test_files) # [0]audio [1]depth [2]rgb
 	train_da, test_da = shape_digital_audio(train_set[0], test_set[0])
 	train_specs, test_specs = shape_spectrograms(train_set[0], test_set[0])
-	save_spec_sets(spec_sets, train_specs, test_specs, train_set[1], test_set[1], train_set[2], test_set[2])
-	save_da_sets(da_sets, train_da, test_da, train_set[1], test_set[1], train_set[2], test_set[2])
+	save_sets(sets_file, train_da, test_da, train_specs, test_specs, train_set[1], test_set[1], train_set[2], test_set[2])
 
 ######################################################
 ######################################################
@@ -119,6 +116,7 @@ def concatenate(train_files, test_files):
 			print "TRAINING: downsizing rgb map", counter
 			train_rgb[counter] = downsize(rgb_map, factor=20)
 			counter += 1
+	train_rgb = np.reshape(train_rgb, (train_audio.shape[0],24,32,1))
 	train_set.append(train_rgb)
 	test_rgb = np.empty((test_audio.shape[0],24,32))
 	counter = 0
@@ -127,7 +125,8 @@ def concatenate(train_files, test_files):
 			print "TEST: downsizing rgb map", counter
 			test_rgb[counter] = downsize(rgb_map, factor=20)
 			counter += 1
-	test_set.append(train_rgb)
+	test_rgb = np.reshape(test_rgb, (test_audio.shape[0],24,32,1))
+	test_set.append(test_rgb)
 
 	return train_set, test_set
 
@@ -227,29 +226,18 @@ def shape_spectrograms(train_audio, test_audio):
 
 ######################################################
 
-def save_spec_sets(spec_sets, train_specs, test_specs, train_depths, test_depths, train_rgb, test_rgb):
+def save_sets(sets_file, train_da, test_da, train_specs, test_specs, train_depths, test_depths, train_rgb, test_rgb):
 	print "saving sets (with spectrograms as input)..."
 	with h5py.File(spec_sets, 'w') as sets:
-		sets.create_dataset('train_specs', data=train_specs)
-		sets.create_dataset('train_depths', data=train_depths)
-		sets.create_dataset('test_specs', data=test_specs)
-		sets.create_dataset('test_depths', data=test_depths)
-		sets.create_dataset('train_rgb', data=train_rgb)
-		sets.create_dataset('test_rgb', data=test_rgb)
-	print "training and test sets saved as '%s'" %spec_sets
-
-######################################################
-
-def save_da_sets(da_sets, train_da, test_da, train_depths, test_depths, train_rgb, test_rgb):
-	print "saving sets (with digital audio as input)..."
-	with h5py.File(da_sets, 'w') as sets:
 		sets.create_dataset('train_da', data=train_da)
-		sets.create_dataset('train_depths', data=train_depths)
 		sets.create_dataset('test_da', data=test_da)
+		sets.create_dataset('train_specs', data=train_specs)
+		sets.create_dataset('test_specs', data=test_specs)
+		sets.create_dataset('train_depths', data=train_depths)
 		sets.create_dataset('test_depths', data=test_depths)
 		sets.create_dataset('train_rgb', data=train_rgb)
 		sets.create_dataset('test_rgb', data=test_rgb)
-	print "training and test sets saved as '%s'" %da_sets
+	print "training and test sets saved as '%s'" %sets_file
 
 ######################################################
 ######################################################
