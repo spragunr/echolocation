@@ -29,17 +29,17 @@ def main():
 		print "building model..."
 		path = os.getcwd()+'/'
 		with h5py.File(path+sets_file, 'r') as sets:
-			x_train = sets['xtrain'][:]/32000
-			y_train = np.log(1+sets['ytrain'][:])
-			x_test = sets['xtest'][:]/32000
-			y_test = np.log(1+sets['ytest'][:])
+			x_train = sets['train_da'][:]/32000
+			y_train = np.log(1+sets['train_da'][:])
+			x_test = sets['test_da'][:]/32000
+			y_test = np.log(1+sets['test_depths'][:])
 		model = build_and_train_model(x_train, y_train, model_file)
 	else: 
 		print "loading model..."
 		path = os.getcwd()+'/'
 		with h5py.File(path+sets_file, 'r') as sets:
-			x_test = sets['xtest'][:]/32000
-			y_test = np.log(1+sets['ytest'][:])
+			x_test = sets['test_da'][:]/32000
+			y_test = np.log(1+sets['test_depths'][:])
 		model = load_model(model_file, custom_objects={'adjusted_mse':adjusted_mse})
 	loss = run_model(model, x_test, y_test)	
 
