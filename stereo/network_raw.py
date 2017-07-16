@@ -52,7 +52,8 @@ def build_and_train_model(x_train, y_train, model_file):
 					strides=(26),
 					activation='relu', 
 					input_shape=x_train.shape[1:]))
-	net.add(Reshape((188,64,1)))
+	conv_output_size = net.layers[0].compute_output_shape(x_train.shape)[1]				
+	net.add(Reshape((conv_output_size,64,1)))
 	net.add(Conv2D(128, (5,5), activation='relu'))
 	net.add(Conv2D(128, (5,5), strides=(2,2), activation='relu'))
 	net.add(Conv2D(64, (5,5), strides=(2,2), activation='relu'))

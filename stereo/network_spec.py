@@ -22,9 +22,10 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 def main():
 
 	# files
-	model_file = 'model_100t_specA5.h5'
-	specs_file = 'spec_100t_specA.h5'
-	sets_file = 'sets_100t_specA.h5'
+	model_file = 'model_ball_specA.h5'
+	#specs_file = 'spec_ball_specA.h5'
+	sets_file = 'ball_data_sets.h5'
+  #sets_file = 'sets_ball_specA.h5'
 
 	if os.path.isfile(model_file):
 		print "loading model..."

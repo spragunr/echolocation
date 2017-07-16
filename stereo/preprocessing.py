@@ -23,8 +23,8 @@ def main():
 	> train_files - 
 	> test_files - 
 	'''
-	train_files = ['/data_stereo/forensics']
-	test_files = ['/data_stereo/spine']
+	train_files = ['ball_train1.h5', 'ball_train2.h5', 'ball_train3.h5', 'ball_train4.h5', 'ball_train5.h5']
+	test_files = ['ball_test1.h5', 'ball_test2.h5', 'ball_test3.h5']
 	
 	if len(argv) != 2: 
 		print "usage: preprocessing.py collective_data_name"
@@ -54,7 +54,7 @@ def concatenate(train_files, test_files):
 	train_rgb_list = []
 	test_rgb_list = []
 
-	path = os.getcwd()+'/' 
+	path = os.getcwd()+'/data_ball/' 
 	#path = '/media/hoangnt/seagate/legit_data/'
 	#path = '/Volumes/seagate/legit_data/'
 	for i in range(len(train_files)):
@@ -106,7 +106,7 @@ def concatenate(train_files, test_files):
 			print "TEST: downsizing depth map", counter
 			test_depth[counter] = downsize(d_map)
 			counter += 1
-	test_set.append(train_depth)
+	test_set.append(test_depth)
 
 	## RGB ##
 	train_rgb = np.empty((train_audio.shape[0],24,32))
@@ -228,7 +228,7 @@ def shape_spectrograms(train_audio, test_audio):
 
 def save_sets(sets_file, train_da, test_da, train_specs, test_specs, train_depths, test_depths, train_rgb, test_rgb):
 	print "saving sets (with spectrograms as input)..."
-	with h5py.File(spec_sets, 'w') as sets:
+	with h5py.File(sets_file, 'w') as sets:
 		sets.create_dataset('train_da', data=train_da)
 		sets.create_dataset('test_da', data=test_da)
 		sets.create_dataset('train_specs', data=train_specs)
