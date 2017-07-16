@@ -22,8 +22,8 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 def main():
 
 	# files 
-	model_file = 'model_100t_rawA4.h5' 
-	sets_file = 'sets_100t_rawA.h5'
+	model_file = 'model_ball_rawA.h5' 
+	sets_file = 'ball_data_sets.h5'
 
 	if not os.path.isfile(model_file):
 		print "building model..."
@@ -66,7 +66,7 @@ def build_and_train_model(x_train, y_train, model_file):
 	net.add(Dense(192, activation='linear'))
 	net.compile(optimizer='adam', loss=adjusted_mse)
 	print "finished compiling"
-	net.fit(x_train, y_train, validation_split=0.2, epochs=150, batch_size=32)
+	net.fit(x_train, y_train, validation_split=0.2, epochs=25, batch_size=32)
 	net.save(model_file)
 	print "model saved as '%s'" %model_file
 	return net

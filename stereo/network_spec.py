@@ -31,16 +31,16 @@ def main():
 		print "loading model..."
 		path = os.getcwd()+'/'
 		with h5py.File(path+sets_file, 'r') as sets:
-			x_test = normalize(sets['test_spec'][:])
+			x_test = normalize(sets['test_specs'][:])
 			y_test = np.log(1+sets['test_depths'][:])
 		model = load_model(model_file, custom_objects={'adjusted_mse':adjusted_mse})
 	else:
 		print "building model..."
 		path = os.getcwd()+'/'
 		with h5py.File(path+sets_file, 'r') as sets:	
-			x_train = normalize(sets['train_spec'][:])
+			x_train = normalize(sets['train_specs'][:])
 			y_train = np.log(1+sets['train_depths'][:])
-			x_test = normalize(sets['test_spec'][:])
+			x_test = normalize(sets['test_specs'][:])
 			y_test = np.log(1+sets['test_depths'][:])
 		model = build_and_train_model(x_train, y_train, model_file)
 	loss = run_model(model, x_test, y_test)
@@ -57,16 +57,17 @@ def build_and_train_model(x_train, y_train, model_file):
 			input_shape=x_train.shape[1:]))
   net.add(Conv2D(128, (5,5), strides=(2,2), activation='relu'))
   net.add(Conv2D(64, (5,5), strides=(2,2), activation='relu'))
-  net.add(Conv2D(32, (5,5), strides=(3,3), activation='relu'))
+  net.add(Conv2D(32, (3,3), strides=(2,2), activation='relu'))
   net.add(Flatten())
   net.add(Dense(600, activation='relu'))
   net.add(Dense(1200, activation='relu'))
   net.add(Dense(600, activation='relu'))
-  net.add(Dense(300, activation='relu'))
+  net.add(Dense(300, activation='relu'))	
+  #net.add(Flatten()) 
   net.add(Dense(192, activation='linear'))
   net.compile(optimizer='adam', loss=adjusted_mse)
   print "finished compiling"
-  net.fit(x_train, y_train, validation_split=0.2, epochs=150, batch_size=32)
+  net.fit(x_train, y_train, validation_split=0.2, epochs=25, batch_size=32)
   net.save(model_file)
   print "model saved as '%s'" %model_file
   return net
