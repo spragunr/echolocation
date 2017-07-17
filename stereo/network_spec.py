@@ -75,10 +75,10 @@ def build_and_train_model(x_train, y_train, model_file):
 def run_model(net, x_test, y_test):
 	loss = net.evaluate(x_test, y_test)
 	print "\nLOSS:", loss
-#	predictions = net.predict(x_test)
-#	view_average_error(np.exp(y_test)-1, np.exp(predictions)-1)
-#	for i in range(100, 2000, 110):
-#		view_depth_maps(100, net, np.exp(y_test)-1, np.exp(predictions)-1)
+	predictions = net.predict(x_test)
+	view_average_error(np.exp(y_test)-1, np.exp(predictions)-1)
+	for i in range(100, 2000, 110):
+		view_depth_maps(100, net, np.exp(y_test)-1, np.exp(predictions)-1)
 
 #####################################################
 
