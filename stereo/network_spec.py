@@ -22,8 +22,8 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 def main():
 
 	# file names to change as necessary
-	model_file = 'model_ball_specA.h5'
-	sets_file = 'ball_data_sets.h5'
+	model_file = 'model_ball_specA2.h5'
+	sets_file = 'ball_data2_sets.h5'
   #sets_file = 'sets_ball_specA.h5'
 
 	if os.path.isfile(model_file):
@@ -48,7 +48,7 @@ def main():
 ######################################################
 
 def build_and_train_model(x_train, y_train, model_file):
-  net = Sequential()
+	net = Sequential()
 	net.add(Conv2D(128, (5,5), 
 			strides=(1,1), 
 			activation='relu',
