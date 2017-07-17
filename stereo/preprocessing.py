@@ -33,7 +33,7 @@ def main():
 	sets_file = argv[1] + '_sets.h5' #contains the components of the training and test sets 
 
 	if os.path.isfile(sets_file):
-		print "preprocessed training and test sets already exist under file %s" %sets_file
+		print "preprocessed training and test sets already exist under file '%s'" %sets_file
 		return
 
 	train_set, test_set = concatenate(train_files, test_files) # [0]audio [1]depth [2]rgb
@@ -98,7 +98,8 @@ def concatenate(train_files, test_files):
 			print "TRAINING: downsizing depth map", counter
 			train_depth[counter] = downsize(d_map)
 			counter += 1
-	train_set.append(train_depth)
+	train_depth_reshaped = np.reshape(train_depth, (train_depth.shape[0],-1))
+	train_set.append(train_depth_reshaped)
 	test_depth = np.empty((test_audio.shape[0],12,16))
 	counter = 0
 	for d_file in test_depth_list:
@@ -106,7 +107,8 @@ def concatenate(train_files, test_files):
 			print "TEST: downsizing depth map", counter
 			test_depth[counter] = downsize(d_map)
 			counter += 1
-	test_set.append(test_depth)
+	test_depth_reshaped = np.reshape(test_depth, (test_depth.shape[0],-1))
+	test_set.append(test_depth_reshaped)
 
 	## RGB ##
 	train_rgb = np.empty((train_audio.shape[0],24,32))
