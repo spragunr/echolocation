@@ -30,7 +30,7 @@ def main():
 		path = os.getcwd()+'/'
 		with h5py.File(path+sets_file, 'r') as sets:
 			x_train = sets['train_da'][:]/32000
-			y_train = np.log(1+sets['train_da'][:])
+			y_train = np.log(1+sets['train_depths'][:])
 			x_test = sets['test_da'][:]/32000
 			y_test = np.log(1+sets['test_depths'][:])
 		model = build_and_train_model(x_train, y_train, model_file)
@@ -50,7 +50,7 @@ def build_and_train_model(x_train, y_train, model_file):
 	net = Sequential()
 	net.add(Conv1D(64, (256),
 					strides=(26),
-					activation='relu', 
+					activation='relu',
 					input_shape=x_train.shape[1:]))
 	conv_output_size = net.layers[0].compute_output_shape(x_train.shape)[1]				
 	net.add(Reshape((conv_output_size,64,1)))
