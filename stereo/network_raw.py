@@ -23,7 +23,7 @@ def main():
 
 	# files 
 	model_file = 'model_ball_rawA.h5' 
-	sets_file = 'ball_data_sets.h5'
+	sets_file = 'ball_data2_sets.h5'
 
 	if not os.path.isfile(model_file):
 		print "building model..."
@@ -48,25 +48,26 @@ def main():
 
 def build_and_train_model(x_train, y_train, model_file):
 	net = Sequential()
-	net.add(Conv1D(64, (256),
+	net.add(Conv1D(32, (256),
 					strides=(26),
 					activation='relu',
 					input_shape=x_train.shape[1:]))
 	conv_output_size = net.layers[0].compute_output_shape(x_train.shape)[1]				
-	net.add(Reshape((conv_output_size,64,1)))
+	net.add(Reshape((conv_output_size,32,1)))
 	net.add(Conv2D(128, (5,5), activation='relu'))
-	net.add(Conv2D(128, (5,5), strides=(2,2), activation='relu'))
-	net.add(Conv2D(64, (5,5), strides=(2,2), activation='relu'))
-	net.add(Conv2D(32, (5,5), strides=(3,3), activation='relu'))
+	net.add(Conv2D(128, (5,5), strides=(1,1), activation='relu'))
+	net.add(Conv2D(32, (5,5), strides=(2,2), activation='relu'))
 	net.add(Flatten())
 	net.add(Dense(600, activation='relu'))
-	net.add(Dense(1200, activation='relu'))
 	net.add(Dense(600, activation='relu'))
 	net.add(Dense(300, activation='relu'))
 	net.add(Dense(192, activation='linear'))
 	net.compile(optimizer='adam', loss=adjusted_mse)
 	print "finished compiling"
-	net.fit(x_train, y_train, validation_split=0.2, epochs=25, batch_size=32)
+	hist = net.fit(x_train, y_train, validation_split=0.0, epochs=1, batch_size=32)
+	with h5py.File(model_file[:-3]+'_loss_history.h5', 'w') as lh:
+		lh.create_dataset('losses', data=hist.history['loss'])
+		print "loss history saved as '"+model_file[:-3]+"_loss_history.h5'"
 	net.save(model_file)
 	print "model saved as '%s'" %model_file
 	return net

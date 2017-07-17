@@ -55,17 +55,18 @@ def build_and_train_model(x_train, y_train, model_file):
 			data_format='channels_last',
 			input_shape=x_train.shape[1:]))
 	net.add(Conv2D(128, (5,5), strides=(2,2), activation='relu'))
-	net.add(Conv2D(64, (5,5), strides=(2,2), activation='relu'))
-	net.add(Conv2D(32, (3,3), strides=(2,2), activation='relu'))
+	net.add(Conv2D(32, (3,3), strides=(1,1), activation='relu'))
 	net.add(Flatten())
 	net.add(Dense(600, activation='relu'))
-	net.add(Dense(1200, activation='relu'))
 	net.add(Dense(600, activation='relu'))
 	net.add(Dense(300, activation='relu'))	
 	net.add(Dense(192, activation='linear'))
 	net.compile(optimizer='adam', loss=adjusted_mse)
 	print "finished compiling"
-	net.fit(x_train, y_train, validation_split=0.2, epochs=25, batch_size=32)
+	hist = net.fit(x_train, y_train, validation_split=0.0, epochs=25, batch_size=32)
+	with h5py.File(model_file[:-3]+'_loss_history.h5', 'w') as lh:
+		lh.create_dataset('losses', data=hist.history['loss'])
+		print "loss history saved as '"+model_file[:-3]+"_loss_history.h5'"
 	net.save(model_file)
 	print "model saved as '%s'" %model_file
 	return net
@@ -75,7 +76,7 @@ def build_and_train_model(x_train, y_train, model_file):
 def run_model(net, x_test, y_test):
 	loss = net.evaluate(x_test, y_test)
 	print "\nLOSS:", loss
-	predictions = net.predict(x_test)
+	predicti, Reshapeons = net.predict(x_test)
 	view_average_error(np.exp(y_test)-1, np.exp(predictions)-1)
 	for i in range(100, 2000, 110):
 		view_depth_maps(100, net, np.exp(y_test)-1, np.exp(predictions)-1)

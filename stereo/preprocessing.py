@@ -179,8 +179,8 @@ def shape_digital_audio(train_audio, test_audio):
 ######################################################
 
 def shape_spectrograms(train_audio, test_audio):
-	top_crop = 68
-	bot_crop = -34
+	top_crop = 36
+	bot_crop = -39
 
 	train_AS = train_audio.shape
 	print "TRAINING: creating spectrogram 0" 
