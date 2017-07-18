@@ -179,13 +179,15 @@ def shape_digital_audio(train_audio, test_audio):
 ######################################################
 
 def shape_spectrograms(train_audio, test_audio):
-	top_crop = 36
-	bot_crop = -39
+        min_freq=7000
+        max_freq=17000
 
 	train_AS = train_audio.shape
 	print "TRAINING: creating spectrogram 0" 
-	freq1, time1, spectro1 = signal.spectrogram(train_audio[0,:,0], noverlap=230)
-	freq2, time2, spectro2 = signal.spectrogram(train_audio[0,:,1], noverlap=230)
+	freq1, time1, spectro1 = signal.spectrogram(train_audio[0,:,0], noverlap=230, fs=44100)
+	freq2, time2, spectro2 = signal.spectrogram(train_audio[0,:,1], noverlap=230, fs=44100)
+        top_crop = np.where(freq1 > min_freq)[0][0]
+        bot_crop = np.where(freq1 > max_freq)[0][0]
 	crop1 = spectro1[top_crop:bot_crop,:]
 	crop2 = spectro2[top_crop:bot_crop,:]
 	combined = np.concatenate((crop1,crop2),axis=1)
