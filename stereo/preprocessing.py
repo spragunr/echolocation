@@ -25,7 +25,7 @@ def main():
 	'''
 	train_files = ['ball_train1.h5', 'ball_train2.h5', 'ball_train3.h5', 'ball_train4.h5', 'ball_train5.h5']
 	test_files = ['ball_test1.h5', 'ball_test2.h5', 'ball_test3.h5']
-	
+
 	if len(argv) != 2: 
 		print "usage: preprocessing.py collective_data_name"
 		return

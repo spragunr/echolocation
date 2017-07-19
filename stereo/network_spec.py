@@ -4,6 +4,7 @@ import numpy as np
 import os 
 import os.path
 import tensorflow as tf
+from keras.callbacks import ModelCheckpoint
 
 from keras.backend import floatx
 from keras.layers import Conv2D, Conv3D, Dense, Dropout
@@ -22,8 +23,8 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 def main():
 
 	# file names to change as necessary
-	model_file = 'model_ball_specA2.h5'
-	sets_file = 'ball_data2_sets.h5'
+	model_file = 'model_ball_specA6.h5'
+	sets_file = 'ball_data4_sets.h5'
   #sets_file = 'sets_ball_specA.h5'
 
 	if os.path.isfile(model_file):
@@ -33,6 +34,7 @@ def main():
 			x_test = normalize(sets['test_specs'][:])
 			y_test = np.log(1+sets['test_depths'][:])
 		model = load_model(model_file, custom_objects={'adjusted_mse':adjusted_mse})
+                model.summary()
 	else:
 		print "building model..."
 		path = os.getcwd()+'/'
@@ -42,6 +44,8 @@ def main():
 			x_test = normalize(sets['test_specs'][:])
 			y_test = np.log(1+sets['test_depths'][:])
 		model = build_and_train_model(x_train, y_train, model_file)
+                model.summary()
+
 	loss = run_model(model, x_test, y_test)
 
 ######################################################
@@ -63,7 +67,14 @@ def build_and_train_model(x_train, y_train, model_file):
 	net.add(Dense(192, activation='linear'))
 	net.compile(optimizer='adam', loss=adjusted_mse)
 	print "finished compiling"
-	hist = net.fit(x_train, y_train, validation_split=0.0, epochs=25, batch_size=32)
+
+	# checkpoint
+	filepath= model_file[:-3] + '_weights.{epoch:02d}.h5'
+	checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=0, save_best_only=False,save_weights_only=False, mode='auto', period=25)
+	callbacks_list=[checkpoint]
+ 
+	hist = net.fit(x_train, y_train, validation_split=0.0, epochs=4, batch_size=32, callbacks=callbacks_list, verbose=0)
+
 	with h5py.File(model_file[:-3]+'_loss_history.h5', 'w') as lh:
 		lh.create_dataset('losses', data=hist.history['loss'])
 		print "loss history saved as '"+model_file[:-3]+"_loss_history.h5'"
@@ -76,7 +87,7 @@ def build_and_train_model(x_train, y_train, model_file):
 def run_model(net, x_test, y_test):
 	loss = net.evaluate(x_test, y_test)
 	print "\nLOSS:", loss
-	predicti, Reshapeons = net.predict(x_test)
+	predictions = net.predict(x_test)
 	view_average_error(np.exp(y_test)-1, np.exp(predictions)-1)
 	for i in range(100, 2000, 110):
 		view_depth_maps(100, net, np.exp(y_test)-1, np.exp(predictions)-1)
