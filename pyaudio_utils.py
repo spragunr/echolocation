@@ -24,7 +24,7 @@ class AudioPlayer(object):
             channels=self.wave_file.getnchannels(),
             rate=self.wave_file.getframerate(),
             output=True,
-            frames_per_buffer=256,
+            frames_per_buffer=512,
             stream_callback=self._callback)
 
         self.frame_bytes = (self.wave_file.getsampwidth() *
