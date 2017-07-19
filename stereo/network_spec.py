@@ -69,11 +69,11 @@ def build_and_train_model(x_train, y_train, model_file):
 	print "finished compiling"
 
 	# checkpoint
-	filepath= model_file[:-3] + '_weights.{epoch:02d}.h5'
-	checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=0, save_best_only=False,save_weights_only=False, mode='auto', period=25)
+	filepath= model_file[:-3] + '.{epoch:02d}.h5'
+	checkpoint = ModelCheckpoint(filepath, monitor='loss', verbose=0, save_best_only=False,save_weights_only=False, mode='auto', period=25)
 	callbacks_list=[checkpoint]
  
-	hist = net.fit(x_train, y_train, validation_split=0.0, epochs=4, batch_size=32, callbacks=callbacks_list, verbose=0)
+	hist = net.fit(x_train, y_train, validation_split=0.0, epochs=200, batch_size=32, callbacks=callbacks_list)
 
 	with h5py.File(model_file[:-3]+'_loss_history.h5', 'w') as lh:
 		lh.create_dataset('losses', data=hist.history['loss'])
