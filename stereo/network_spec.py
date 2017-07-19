@@ -4,6 +4,7 @@ import numpy as np
 import os 
 import os.path
 import tensorflow as tf
+from keras.callbacks import ModelCheckpoint
 
 from keras.backend import floatx
 from keras.layers import Conv2D, Conv3D, Dense, Dropout
@@ -11,7 +12,7 @@ from keras.layers.core import Flatten
 from keras.models import load_model, Sequential
 from keras import optimizers
 from scipy import io, signal
-from sys import argv
+from sys import argv, exit
 
 tf.logging.set_verbosity(tf.logging.WARN)
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -21,54 +22,65 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
 def main():
 
-	# files
-	model_file = 'model_100t_specA5.h5'
-	specs_file = 'spec_100t_specA.h5'
-	sets_file = 'sets_100t_specA.h5'
+	# file names to change as necessary
+	model_file = 'model_ball_specA6.h5'
+	sets_file = 'ball_data4_sets.h5'
+  #sets_file = 'sets_ball_specA.h5'
 
 	if os.path.isfile(model_file):
 		print "loading model..."
 		path = os.getcwd()+'/'
 		with h5py.File(path+sets_file, 'r') as sets:
-			x_test = normalize(sets['xtest'][:])
-			y_test = np.log(1+sets['ytest'][:])
+			x_test = normalize(sets['test_specs'][:])
+			y_test = np.log(1+sets['test_depths'][:])
 		model = load_model(model_file, custom_objects={'adjusted_mse':adjusted_mse})
+                model.summary()
 	else:
 		print "building model..."
 		path = os.getcwd()+'/'
 		with h5py.File(path+sets_file, 'r') as sets:	
-			x_train = normalize(sets['xtrain'][:])
-			y_train = np.log(1+sets['ytrain'][:])
-			x_test = normalize(sets['xtest'][:])
-			y_test = np.log(1+sets['ytest'][:])
+			x_train = normalize(sets['train_specs'][:])
+			y_train = np.log(1+sets['train_depths'][:])
+			x_test = normalize(sets['test_specs'][:])
+			y_test = np.log(1+sets['test_depths'][:])
 		model = build_and_train_model(x_train, y_train, model_file)
+                model.summary()
+
 	loss = run_model(model, x_test, y_test)
 
 ######################################################
 ######################################################
 
 def build_and_train_model(x_train, y_train, model_file):
-  net = Sequential()
-  net.add(Conv2D(128, (5,5), 
+	net = Sequential()
+	net.add(Conv2D(128, (5,5), 
 			strides=(1,1), 
 			activation='relu',
 			data_format='channels_last',
 			input_shape=x_train.shape[1:]))
-  net.add(Conv2D(128, (5,5), strides=(2,2), activation='relu'))
-  net.add(Conv2D(64, (5,5), strides=(2,2), activation='relu'))
-  net.add(Conv2D(32, (5,5), strides=(3,3), activation='relu'))
-  net.add(Flatten())
-  net.add(Dense(600, activation='relu'))
-  net.add(Dense(1200, activation='relu'))
-  net.add(Dense(600, activation='relu'))
-  net.add(Dense(300, activation='relu'))
-  net.add(Dense(192, activation='linear'))
-  net.compile(optimizer='adam', loss=adjusted_mse)
-  print "finished compiling"
-  net.fit(x_train, y_train, validation_split=0.2, epochs=150, batch_size=32)
-  net.save(model_file)
-  print "model saved as '%s'" %model_file
-  return net
+	net.add(Conv2D(128, (5,5), strides=(2,2), activation='relu'))
+	net.add(Conv2D(32, (3,3), strides=(1,1), activation='relu'))
+	net.add(Flatten())
+	net.add(Dense(600, activation='relu'))
+	net.add(Dense(600, activation='relu'))
+	net.add(Dense(300, activation='relu'))	
+	net.add(Dense(192, activation='linear'))
+	net.compile(optimizer='adam', loss=adjusted_mse)
+	print "finished compiling"
+
+	# checkpoint
+	filepath= model_file[:-3] + '.{epoch:02d}.h5'
+	checkpoint = ModelCheckpoint(filepath, monitor='loss', verbose=0, save_best_only=False,save_weights_only=False, mode='auto', period=25)
+	callbacks_list=[checkpoint]
+ 
+	hist = net.fit(x_train, y_train, validation_split=0.0, epochs=200, batch_size=32, callbacks=callbacks_list)
+
+	with h5py.File(model_file[:-3]+'_loss_history.h5', 'w') as lh:
+		lh.create_dataset('losses', data=hist.history['loss'])
+		print "loss history saved as '"+model_file[:-3]+"_loss_history.h5'"
+	net.save(model_file)
+	print "model saved as '%s'" %model_file
+	return net
 
 ######################################################
 
