@@ -91,7 +91,7 @@ class Recorder(object):
             # Play and record audio
             self.audio_player.play()
             #self.soundhandle.playWave(self.chirp_file)
-            rospy.sleep(.06) # hack.  it takes the sound a while to play...
+            rospy.sleep(.04) # hack.  it takes the sound a while to play...
             self.audio_recorder.record(self.record_duration)
             #self.soundhandle.playWave(self.chirp_file)
 
@@ -135,11 +135,11 @@ class Recorder(object):
                             help='number of audio channels to record')
         
         parser.add_argument('--rate', type=int, metavar="RATE",
-                            default=6, help='rate to record chirps')
+                            default=10, help='rate to record chirps')
         
         parser.add_argument('--duration', type=float, metavar="DURATION",
                             dest='record_duration',
-                            default=.06, help='duration of audio recordings')
+                            default=.08, help='duration of audio recordings')
 
         parser.add_argument('--volume', type=int, metavar="VOLUME",
                             default=75, help='volume (0-100)')
@@ -148,7 +148,7 @@ class Recorder(object):
                             default=100, help='mic_level (0-100)')
 
         parser.add_argument('-c', '--chirp-file', type=str, metavar="CHIRP_FILE",
-                            default='/home/hoangnt/echolocation/data/20000to12000.02s.wav',
+                            default='data/16000to8000.02s.wav',
                             help='Location of .wav file.')
 
 
