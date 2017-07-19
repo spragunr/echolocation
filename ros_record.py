@@ -73,20 +73,18 @@ class Recorder(object):
         index = 0
 
         # MAIN LOOP
-        while not rospy.is_shutdown():
+        while not rospy.is_shutdown() and index <= self.number:
 
+            callback_time = time.time()
+
+            # Grab image data
             if self.record_rgb:
                 self.lock.acquire()
                 depth_image = self.latest_depth
                 rgb_image = self.latest_rgb
                 self.lock.release()
-                self.h5_append(self.depth_set, index, depth_image)
-                self.h5_append(self.rgb_set, index, rgb_image)
             else:
                 depth_image = self.latest_depth
-                self.h5_append(self.depth_set, index, depth_image)
-
-            self.h5_append(self.time_set, index, time.time())
 
             # Play and record audio
             self.audio_player.play()
@@ -97,7 +95,12 @@ class Recorder(object):
 
             audio = self.record()
 
+            # Store to disk
+            self.h5_append(self.time_set, index, callback_time)
             self.h5_append(self.audio_set, index, audio)
+            self.h5_append(self.depth_set, index, depth_image)
+            if self.record_rgb:
+                self.h5_append(self.rgb_set, index, rgb_image)
 
             index += 1
 
@@ -136,6 +139,9 @@ class Recorder(object):
         
         parser.add_argument('--rate', type=int, metavar="RATE",
                             default=10, help='rate to record chirps')
+
+        parser.add_argument('--number', type=int, metavar="NUMBER",
+                            default=5000, help='number of chirps to record')
         
         parser.add_argument('--duration', type=float, metavar="DURATION",
                             dest='record_duration',
