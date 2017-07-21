@@ -54,7 +54,7 @@ def concatenate(train_files, test_files):
 	train_rgb_list = []
 	test_rgb_list = []
 
-	path = os.getcwd()+'/data_ball/' 
+	path = os.getcwd()+'/ball_data/' 
 	#path = '/media/hoangnt/seagate/legit_data/'
 	#path = '/Volumes/seagate/legit_data/'
 	for i in range(len(train_files)):
@@ -96,7 +96,7 @@ def concatenate(train_files, test_files):
 	for d_file in train_depth_list:
 		for d_map in d_file:
 			print "TRAINING: downsizing depth map", counter
-			train_depth[counter] = downsize(d_map)
+			train_depth[counter] = downsize(d_map, method='min')
 			counter += 1
 	train_depth_reshaped = np.reshape(train_depth, (train_depth.shape[0],-1))
 	train_set.append(train_depth_reshaped)
@@ -105,7 +105,7 @@ def concatenate(train_files, test_files):
 	for d_file in test_depth_list:
 		for d_map in d_file:
 			print "TEST: downsizing depth map", counter
-			test_depth[counter] = downsize(d_map)
+			test_depth[counter] = downsize(d_map, method='min')
 			counter += 1
 	test_depth_reshaped = np.reshape(test_depth, (test_depth.shape[0],-1))
 	test_set.append(test_depth_reshaped)
@@ -134,11 +134,12 @@ def concatenate(train_files, test_files):
 
 ######################################################
 
-def downsize(depth_map, factor=40):
+def downsize(depth_map, method='mean', factor=40):
 	'''
 	@PURPOSE: downsizes an image by a factor of its dimensions
 	@PARAMS: img - [numpy array] image to downsize 
-					 factor - [int] factor to downsize image by (default is 40)
+                 method - [string] 'mean' or 'min'
+	         factor - [int] factor to downsize image by (default is 40)
 	@RETURN: [numpy array] downsized image
 	'''
 	orig_dims = depth_map.shape
@@ -149,7 +150,12 @@ def downsize(depth_map, factor=40):
 			window = depth_map[i:i+factor, j:j+factor].flatten()
 			non_zero = np.delete(window, np.where(window==0))
 			if non_zero.size != 0:
-				downsized_map[i/factor,j/factor] = np.mean(non_zero)
+                                if method == 'mean':
+				        downsized_map[i/factor,j/factor] = np.mean(non_zero)
+                                elif method == 'min':
+				        downsized_map[i/factor,j/factor] = np.min(non_zero)
+                                else:
+                                        print "UNRECOGNIZED DOWNSIZE METHOD"
 	return downsized_map
 
 ######################################################
