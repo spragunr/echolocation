@@ -23,8 +23,8 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 def main():
 
 	# file names to change as necessary
-	model_file = 'model_ball_specA6.h5'
-	sets_file = 'ball_data4_sets.h5'
+	model_file = 'model_100k_specA.h5'
+	sets_file = '100k_data_sets.h5'
   #sets_file = 'sets_ball_specA.h5'
 
 	if os.path.isfile(model_file):
@@ -32,7 +32,7 @@ def main():
 		path = os.getcwd()+'/'
 		with h5py.File(path+sets_file, 'r') as sets:
 			x_test = normalize(sets['test_specs'][:])
-			y_test = np.log(1+sets['test_depths'][:])
+			y_test = np.log(1+sets['test_depths'][:].reshape(-1, 192))
 		model = load_model(model_file, custom_objects={'adjusted_mse':adjusted_mse})
                 model.summary()
 	else:
@@ -40,9 +40,9 @@ def main():
 		path = os.getcwd()+'/'
 		with h5py.File(path+sets_file, 'r') as sets:	
 			x_train = normalize(sets['train_specs'][:])
-			y_train = np.log(1+sets['train_depths'][:])
+			y_train = np.log(1+sets['train_depths'][:].reshape(-1, 192))
 			x_test = normalize(sets['test_specs'][:])
-			y_test = np.log(1+sets['test_depths'][:])
+			y_test = np.log(1+sets['test_depths'][:].reshape(-1, 192))
 		model = build_and_train_model(x_train, y_train, model_file)
                 model.summary()
 
