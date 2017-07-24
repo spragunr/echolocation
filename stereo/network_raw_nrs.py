@@ -5,9 +5,11 @@ import os
 import os.path
 import tensorflow as tf
 
+from keras.layers.normalization import BatchNormalization
+from keras.callbacks import ModelCheckpoint
 from keras.backend import floatx
-from keras.layers import Conv1D, Conv2D, Dense
-from keras.layers.core import Flatten, Reshape
+from keras.layers import Conv1D, Conv2D, Dense, AveragePooling2D
+from keras.layers.core import Flatten, Reshape, Dropout
 from keras.models import load_model, Sequential
 from keras import optimizers
 from scipy import io, signal
@@ -22,8 +24,14 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 def main():
 
 	# files 
-	model_file = 'model_ball_rawA.h5' 
-	sets_file = 'ball_data2_sets.h5'
+	model_file = 'model_100_raw.h5' 
+	sets_file = '100k_data_sets.h5'
+
+
+        from keras.backend.tensorflow_backend import set_session
+        config = tf.ConfigProto()
+        config.gpu_options.per_process_gpu_memory_fraction = 0.8
+        set_session(tf.Session(config=config))
 
 	if not os.path.isfile(model_file):
 		print "building model..."
@@ -31,6 +39,11 @@ def main():
 		with h5py.File(path+sets_file, 'r') as sets:
 			x_train = sets['train_da'][:]/32000
 			y_train = np.log(1+sets['train_depths'][:].reshape(-1, 192))
+
+                        indices = np.random.permutation(x_train.shape[0])
+                        np.take(x_train,indices,axis=0,out=x_train)
+                        np.take(y_train,indices,axis=0,out=y_train)
+                        
 			x_test = sets['test_da'][:]/32000
 			y_test = np.log(1+sets['test_depths'][:].reshape(-1, 192))
 		model = build_and_train_model(x_train, y_train, model_file)
@@ -41,6 +54,7 @@ def main():
 			x_test = sets['test_da'][:]/32000
 			y_test = np.log(1+sets['test_depths'][:].reshape(-1, 192))
 		model = load_model(model_file, custom_objects={'adjusted_mse':adjusted_mse})
+        model.summary()
 	loss = run_model(model, x_test, y_test)	
 
 ######################################################
@@ -48,23 +62,52 @@ def main():
 
 def build_and_train_model(x_train, y_train, model_file):
 	net = Sequential()
-	net.add(Conv1D(32, (256),
-					strides=(26),
+	net.add(Conv1D(128, (256),
+					strides=(1),
 					activation='relu',
 					input_shape=x_train.shape[1:]))
 	conv_output_size = net.layers[0].compute_output_shape(x_train.shape)[1]				
-	net.add(Reshape((conv_output_size,32,1)))
-	net.add(Conv2D(128, (5,5), activation='relu'))
-	net.add(Conv2D(128, (5,5), strides=(1,1), activation='relu'))
-	net.add(Conv2D(32, (5,5), strides=(2,2), activation='relu'))
+	net.add(Reshape((conv_output_size,128,1)))
+        net.add(AveragePooling2D(pool_size=(16, 1), strides=None,
+                                 padding='valid'))
+        net.add(BatchNormalization())
+        net.add(Dropout(rate=.2))
+	net.add(Conv2D(64, (5,5), strides=(2,5), activation='relu'))
+        net.add(BatchNormalization())
+        net.add(Dropout(rate=.1))
+	net.add(Conv2D(64, (5,5), strides=(2,1), activation='relu'))
+        net.add(BatchNormalization())
+        net.add(Dropout(rate=.1))
+	net.add(Conv2D(32, (3,3), strides=(1,1), activation='relu'))
 	net.add(Flatten())
-	net.add(Dense(600, activation='relu'))
-	net.add(Dense(600, activation='relu'))
-	net.add(Dense(300, activation='relu'))
+        net.add(BatchNormalization())
+        net.add(Dropout(rate=.1))
+	net.add(Dense(500, activation='relu'))
+        net.add(BatchNormalization())
+        net.add(Dropout(rate=.1))
+	net.add(Dense(500, activation='relu'))
+        net.add(BatchNormalization())
+        net.add(Dropout(rate=.1))
+	net.add(Dense(500, activation='relu'))
+        net.add(BatchNormalization())
+        net.add(Dropout(rate=.1))
 	net.add(Dense(192, activation='linear'))
 	net.compile(optimizer='adam', loss=adjusted_mse)
+        net.summary()
 	print "finished compiling"
-	hist = net.fit(x_train, y_train, validation_split=0.0, epochs=1, batch_size=32)
+
+        # checkpoint
+	filepath= model_file[:-3] + '.{epoch:02d}.h5'
+	checkpoint = ModelCheckpoint(filepath, monitor='loss',
+	                             verbose=0,
+	                             save_best_only=False,save_weights_only=False,
+	                             mode='auto', period=25)
+	callbacks_list=[checkpoint]
+ 
+	hist = net.fit(x_train, y_train, validation_split=0.1,
+	               epochs=200, batch_size=64, callbacks=callbacks_list)
+
+
 	with h5py.File(model_file[:-3]+'_loss_history.h5', 'w') as lh:
 		lh.create_dataset('losses', data=hist.history['loss'])
 		print "loss history saved as '"+model_file[:-3]+"_loss_history.h5'"
@@ -75,7 +118,7 @@ def build_and_train_model(x_train, y_train, model_file):
 ######################################################
 
 def run_model(net, x_test, y_test):
-	predictions = net.predict(x_test)
+	predictions = net.predict(x_test, batch_size=32)
 	loss = net.evaluate(x_test, y_test)
 	print "\nTEST LOSS:", loss
 	view_average_error(np.exp(y_test)-1,np.exp(predictions)-1)
@@ -121,11 +164,11 @@ def view_depth_maps(index, ytrue, ypred):
 			error = pred - true
 
 			ax1 = plt.subplot(10,3,j*3 + 1)
-			true_map = plt.imshow(true, clim=(500, 2000), interpolation='none')
+			true_map = plt.imshow(true, clim=(500, 5000), interpolation='none')
 			ax1.set_title("True Depth")
 			
 			ax2 = plt.subplot(10,3,j*3 + 2)
-			pred_map = plt.imshow(pred, clim=(500, 2000), interpolation='none')
+			pred_map = plt.imshow(pred, clim=(500, 5000), interpolation='none')
 			ax2.set_title("Predicted Depth")
 			
 			ax3 = plt.subplot(10,3,j*3 + 3)
