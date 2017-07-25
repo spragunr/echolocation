@@ -24,7 +24,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 def main():
 
 	# file names to change as necessary
-	model_file = 'model_100k_specA2.h5'
+	model_file = 'model_100k_specA2X.h5'
 	sets_file = '100k_data2_sets.h5'
   #sets_file = 'sets_ball_specA.h5'
 
@@ -32,7 +32,7 @@ def main():
 		print "loading model..."
 		path = os.getcwd()+'/'
 		with h5py.File(path+sets_file, 'r') as sets:
-			x_test = normalize(sets['test_specs'][:])
+			x_test = (sets['test_specs'][:])/20 - 0.5
 			y_test = np.log(1+sets['test_depths'][:].reshape(-1, 192))
 		model = load_model(model_file, custom_objects={'adjusted_mse':adjusted_mse})
                 model.summary()
@@ -40,7 +40,7 @@ def main():
 		print "building model..."
 		path = os.getcwd()+'/'
 		with h5py.File(path+sets_file, 'r') as sets:	
-			x_train = normalize(sets['train_specs'][:])
+			x_train = (sets['train_specs'][:])/20 - 0.5
 			y_train = np.log(1+sets['train_depths'][:].reshape(-1, 192))
 
 
@@ -48,7 +48,7 @@ def main():
 			np.take(x_train,indices,axis=0,out=x_train)
 			np.take(y_train,indices,axis=0,out=y_train)
 
-			x_test = normalize(sets['test_specs'][:])
+			x_test = (sets['test_specs'][:])/20 - 0.5
 			y_test = np.log(1+sets['test_depths'][:].reshape(-1, 192))
 		model = build_and_train_model(x_train, y_train, model_file)
                 model.summary()
@@ -118,7 +118,6 @@ def adjusted_mse(y_true, y_pred):
 	return tf.reduce_sum(sqr, axis=-1) / num_ok
 
 #####################################################
-
 def view_average_error(ytrue, ypred):
 	error = np.reshape(ypred-ytrue, (-1,12,16))
 	avg_error = np.mean(error, axis=0)
@@ -170,53 +169,3 @@ def normalize(x_set):
 ####################################################
 
 main()
-
-####################################################
-####################################################
-'''x1 = np.reshape(x[index+800], (29,178)) 
-true1 = np.reshape(ytrue[index+800], (12,16))
-pred1 = np.reshape(ypred[index+800], (12,16))
-x2 = np.reshape(x[index+600], (29,178)) 
-true2 = np.reshape(ytrue[index+600], (12,16))
-pred2 = np.reshape(ypred[index+600], (12,16))
-x3 = np.reshape(x[index+1900], (29,178)) 
-true3 = np.reshape(ytrue[index+1900], (12,16))
-pred3 = np.reshape(ypred[index+1900], (12,16))
-
-ax1 = plt.subplot(3,3,1)
-true_map1 = plt.imshow(x1)
-ax1.set_title("Spectrogram 1")
-
-ax2 = plt.subplot(3,3,2)
-true_map1 = plt.imshow(true1, clim=(500,4000), interpolation='none')
-ax2.set_title("True Depth 1")
-
-ax3 = plt.subplot(3,3,3)
-true_map1 = plt.imshow(pred1, clim=(500,4000), interpolation='none')
-ax3.set_title("Predicted Depth 1")
-
-ax4 = plt.subplot(3,3,4)
-pred_map1 = plt.imshow(x2)
-ax4.set_title("Spectrogram 2")
-
-ax5 = plt.subplot(3,3,5)
-true_map2 = plt.imshow(true2, clim=(500,4000), interpolation='none')
-ax5.set_title("True Depth 2")
-
-ax6 = plt.subplot(3,3,6)
-pred_map2 = plt.imshow(pred2, clim=(500,4000), interpolation='none')
-ax6.set_title("Predicted Depth 2")
-
-ax7 = plt.subplot(3,3,7)
-true_map3 = plt.imshow(x3)
-ax7.set_title("Spectrogram 3")
-
-ax8 = plt.subplot(3,3,8)
-pred_map3 = plt.imshow(true3, clim=(500,4000), interpolation='none')
-ax8.set_title("True Depth 3")
-
-ax9 = plt.subplot(3,3,9)
-true_map1 = plt.imshow(pred3, clim=(500,4000), interpolation='none')
-ax9.set_title("Predicted Depth 3")
-
-plt.show()'''
