@@ -5,15 +5,17 @@ import os
 import os.path
 import tensorflow as tf
 
+from keras import regularizers
 from keras.layers.normalization import BatchNormalization
 from keras.callbacks import ModelCheckpoint
 from keras.backend import floatx
-from keras.layers import Conv1D, Conv2D, Dense, AveragePooling2D
-from keras.layers.core import Flatten, Reshape, Dropout
+from keras.layers import Conv1D, Conv2D, Dense, MaxPooling2D
+from keras.layers.core import Flatten, Reshape, Dropout, Lambda
 from keras.models import load_model, Sequential
 from keras import optimizers
 from scipy import io, signal
 from sys import argv, exit
+from keras import backend as K
 
 tf.logging.set_verbosity(tf.logging.WARN)
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -24,8 +26,8 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 def main():
 
 	# files 
-	model_file = 'model_100_raw.h5' 
-	sets_file = '100k_data_sets.h5'
+	model_file = 'model_100k3_raw.h5' 
+	sets_file = '100k_data3_sets.h5'
 
 
         from keras.backend.tensorflow_backend import set_session
@@ -47,6 +49,7 @@ def main():
 			x_test = sets['test_da'][:]/32000
 			y_test = np.log(1+sets['test_depths'][:].reshape(-1, 192))
 		model = build_and_train_model(x_train, y_train, model_file)
+
 	else: 
 		print "loading model..."
 		path = os.getcwd()+'/'
@@ -63,35 +66,30 @@ def main():
 def build_and_train_model(x_train, y_train, model_file):
 	net = Sequential()
 	net.add(Conv1D(128, (256),
-					strides=(1),
-					activation='relu',
-					input_shape=x_train.shape[1:]))
+		       strides=(1),
+		       activation='relu',
+		       input_shape=x_train.shape[1:]))
 	conv_output_size = net.layers[0].compute_output_shape(x_train.shape)[1]				
 	net.add(Reshape((conv_output_size,128,1)))
-        net.add(AveragePooling2D(pool_size=(16, 1), strides=None,
+        #net.add(Lambda(lambda x: K.abs(x)))
+        net.add(MaxPooling2D(pool_size=(16, 1), strides=None,
                                  padding='valid'))
         net.add(BatchNormalization())
-        net.add(Dropout(rate=.2))
 	net.add(Conv2D(64, (5,5), strides=(2,5), activation='relu'))
         net.add(BatchNormalization())
-        net.add(Dropout(rate=.1))
 	net.add(Conv2D(64, (5,5), strides=(2,1), activation='relu'))
         net.add(BatchNormalization())
-        net.add(Dropout(rate=.1))
 	net.add(Conv2D(32, (3,3), strides=(1,1), activation='relu'))
 	net.add(Flatten())
         net.add(BatchNormalization())
-        net.add(Dropout(rate=.1))
-	net.add(Dense(500, activation='relu'))
+	net.add(Dense(600, activation='relu'))
         net.add(BatchNormalization())
-        net.add(Dropout(rate=.1))
-	net.add(Dense(500, activation='relu'))
+	net.add(Dense(600, activation='relu'))
         net.add(BatchNormalization())
-        net.add(Dropout(rate=.1))
-	net.add(Dense(500, activation='relu'))
+	net.add(Dense(600, activation='relu'))
         net.add(BatchNormalization())
-        net.add(Dropout(rate=.1))
 	net.add(Dense(192, activation='linear'))
+
 	net.compile(optimizer='adam', loss=adjusted_mse)
         net.summary()
 	print "finished compiling"
@@ -101,14 +99,15 @@ def build_and_train_model(x_train, y_train, model_file):
 	checkpoint = ModelCheckpoint(filepath, monitor='loss',
 	                             verbose=0,
 	                             save_best_only=False,save_weights_only=False,
-	                             mode='auto', period=25)
+	                             mode='auto', period=10)
 	callbacks_list=[checkpoint]
  
 	hist = net.fit(x_train, y_train, validation_split=0.1,
-	               epochs=200, batch_size=64, callbacks=callbacks_list)
+	               epochs=100, batch_size=64, callbacks=callbacks_list)
 
 
 	with h5py.File(model_file[:-3]+'_loss_history.h5', 'w') as lh:
+                lh.create_dataset('val_losses', data=hist.history['val_loss'])
 		lh.create_dataset('losses', data=hist.history['loss'])
 		print "loss history saved as '"+model_file[:-3]+"_loss_history.h5'"
 	net.save(model_file)
@@ -118,7 +117,7 @@ def build_and_train_model(x_train, y_train, model_file):
 ######################################################
 
 def run_model(net, x_test, y_test):
-	predictions = net.predict(x_test, batch_size=32)
+	predictions = net.predict(x_test, batch_size=64)
 	loss = net.evaluate(x_test, y_test)
 	print "\nTEST LOSS:", loss
 	view_average_error(np.exp(y_test)-1,np.exp(predictions)-1)
@@ -128,8 +127,8 @@ def run_model(net, x_test, y_test):
 #####################################################
 
 def adjusted_mse(y_true, y_pred):
-	ok_entries = np.all(y_true)
-	ok_entries = tf.cast(ok_entries, bool)
+        zero = tf.constant(0, dtype=floatx())
+        ok_entries = tf.not_equal(y_true, zero)
 	safe_targets = tf.where(ok_entries, y_true, y_pred)
 	sqr = tf.square(y_pred - safe_targets)
 	valid = tf.cast(ok_entries, floatx()) 
