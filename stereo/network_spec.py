@@ -89,6 +89,7 @@ def build_and_train_model(x_train, y_train, model_file):
 	hist = net.fit(x_train, y_train, validation_split=0.1, epochs=100, batch_size=64, callbacks=callbacks_list)
 
 	with h5py.File(model_file[:-3]+'_loss_history.h5', 'w') as lh:
+		lh.create_dataset('val_losses', data=hist.history['val_loss'])
 		lh.create_dataset('losses', data=hist.history['loss'])
 		print "loss history saved as '"+model_file[:-3]+"_loss_history.h5'"
 	net.save(model_file)
