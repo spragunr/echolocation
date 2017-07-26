@@ -135,11 +135,11 @@ def build_and_train_model(x_train, y_train, model_file):
 
 def run_model(net, x_test, y_test):
     predictions = net.predict(x_test, batch_size=64)
-    loss = net.evaluate(x_test, y_test)
-    print "\nTEST LOSS:", loss
+    #loss = net.evaluate(x_test, y_test)
+    #print "\nTEST LOSS:", loss
     view_average_error(np.exp(y_test)-1,np.exp(predictions)-1)
     for i in range(100, 2000, 110):
-        view_depth_maps(i, np.exp(y_test)-1, np.exp(predictions)-1)
+        view_depth_maps(i, x_test, np.exp(y_test)-1, np.exp(predictions)-1)
 
 #####################################################
 
@@ -167,17 +167,25 @@ def view_average_error(ytrue, ypred):
 
 #####################################################
 
-def view_depth_maps(index, ytrue, ypred):
+def view_depth_maps(index, xtest, ytrue, ypred):
     all_error = ypred-ytrue
     avg_error = np.mean(all_error)
     stdev = np.std(all_error)
     rng = (avg_error-(3*stdev),avg_error+(3*stdev))
     for i in range(0, ytrue.shape[0], 50):
+        print 
         for j in range(10):
-            index = i  + j
-            index = np.random.randint(ytrue.shape[0])
-            true = np.reshape(ytrue[index], (12,16))
-            pred = np.reshape(ypred[index], (12,16))
+            index = -1
+
+            while index == -1:
+                index = np.random.randint(2000)#ytrue.shape[0])
+                if np.sum(ytrue[index] > 7000) + np.sum(ytrue[index] ==0) < 20:
+                    true = np.reshape(ytrue[index], (12,16))
+                    pred = np.reshape(ypred[index], (12,16))
+                else:
+                    index = -1
+
+            print index  
             #true = np.log( 1 + np.reshape(ytrue[index], (12,16)))
             #pred = np.log(1 + np.reshape(ypred[index], (12,16)))
             error = pred - true
@@ -190,17 +198,21 @@ def view_depth_maps(index, ytrue, ypred):
             min_depth = 300
             max_depth = 7000
 
-            ax1 = plt.subplot(10,3,j*3 + 1)
+            ax0 = plt.subplot(10,4,j*4 + 1)
+            audio_plot = plt.plot(xtest[index,...])
+            ax0.set_title("Audio")
+
+            ax1 = plt.subplot(10,4,j*4 + 2)
             true_map = plt.imshow(true, clim=(min_depth, max_depth),
                                   interpolation='none')
             ax1.set_title("True Depth")
 
-            ax2 = plt.subplot(10,3,j*3 + 2)
+            ax2 = plt.subplot(10,4,j*4 + 3)
             pred_map = plt.imshow(pred, clim=(min_depth, max_depth),
                                   interpolation='none')
             ax2.set_title("Predicted Depth")
 
-            ax3 = plt.subplot(10,3,j*3 + 3)
+            ax3 = plt.subplot(10,4,j*4 + 4)
             error_map = plt.imshow(error, clim=rng, cmap="Greys",
                                    interpolation='none')
             ax3.set_title("Squared Error Map")
