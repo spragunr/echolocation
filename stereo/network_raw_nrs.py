@@ -26,8 +26,8 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 def main():
 
     # files
-    model_file = 'model_100k3_raw_short.h5'
-    sets_file = '100k_data3_sets.h5'
+    model_file = '100k_raw_gen.h5'
+    sets_file = 'prepped100k.h5'
 
 
     from keras.backend.tensorflow_backend import set_session
@@ -39,23 +39,23 @@ def main():
         print "building model..."
         path = os.getcwd()+'/'
         with h5py.File(path+sets_file, 'r') as sets:
-            x_train = sets['train_da'][:]/32000
-            y_train = np.log(1+sets['train_depths'][:].reshape(-1, 192))
+            x_train = sets['train_da'][:,0:2646,:]/32000.
+            y_train = np.log(1. + sets['train_depths'][:].reshape(-1, 192))
 
             indices = np.random.permutation(x_train.shape[0])
             np.take(x_train,indices,axis=0,out=x_train)
             np.take(y_train,indices,axis=0,out=y_train)
 
-            x_test = sets['test_da'][:]/32000
-            y_test = np.log(1+sets['test_depths'][:].reshape(-1, 192))
+            x_test = sets['test_da'][:,0:2646,:]/32000.
+            y_test = np.log(1. + sets['test_depths'][:].reshape(-1, 192))
         model = build_and_train_model(x_train, y_train, model_file)
 
     else:
         print "loading model..."
         path = os.getcwd()+'/'
         with h5py.File(path+sets_file, 'r') as sets:
-            x_test = sets['test_da'][:]/32000
-            y_test = np.log(1+sets['test_depths'][:].reshape(-1, 192))
+            x_test = sets['test_da'][:,0:2646,:]/32000.
+            y_test = np.log(1. + sets['test_depths'][:].reshape(-1, 192))
         model = load_model(model_file, custom_objects={'adjusted_mse':adjusted_mse})
         plot_1d_convolutions(model)
     model.summary()
@@ -77,16 +77,77 @@ def plot_1d_convolutions(model):
     plt.show()
     print W.shape
 
+
+######################################################
+######################################################
+
+def raw_generator(x_train, y_train, batch_size=64, shift=.01,
+                  noise=.05, no_shift=False, shuffle=True):
+    num_samples = x_train.shape[0]
+    sample_length = x_train.shape[1]
+    result_length = int(sample_length * (1 - shift))
+    batch_index = 0
+
+    while True:
+        # Shuffle before each epoch
+        if batch_index == 0 and shuffle:
+            indices = np.random.permutation(x_train.shape[0])
+            np.take(x_train,indices,axis=0,out=x_train)
+            np.take(y_train,indices,axis=0,out=y_train)
+
+        # Randomly crop the audio data...
+        if no_shift:
+            start_ind = np.zeros(batch_size, dtype='int32')
+        else:
+            start_ind = np.random.randint(sample_length - result_length + 1,
+                                          size=batch_size)
+        x_data = np.empty((batch_size, result_length * 2, 1))
+        for i in range(batch_size):
+            x_data[i, 0:result_length, 0] = x_train[batch_index + i,
+                                                    start_ind[i]:start_ind[i] + result_length, 0]
+            x_data[i, result_length::, 0] = x_train[batch_index + i,
+                                                    start_ind[i]:start_ind[i] + result_length, 1]
+
+        # Random multiplier for all samples...
+        x_data *= (1. + np.random.randn(*x_data.shape) * noise)
+
+        y_data = y_train[batch_index:batch_index + batch_size, ...]
+
+        batch_index += batch_size
+
+        if batch_index > (num_samples - batch_size):
+            batch_index = 0
+                       
+        yield x_data, y_data
+    
+
+    
 ######################################################
 ######################################################
 
 def build_and_train_model(x_train, y_train, model_file):
+
+    validation_split = .1
+    batch_size = 64
+    end_val = int(validation_split * x_train.shape[0])
+    x_val = x_train[0:end_val,...]
+    y_val = y_train[0:end_val,...]
+
+    x_train = x_train[end_val::,...]
+    y_train = y_train[end_val::,...]
+    train_gen = raw_generator(x_train, y_train, batch_size=batch_size)
+    val_gen = raw_generator(x_val, y_val, noise=0, no_shift=True)
+
+    for x, y in train_gen:
+        input_shape = x.shape
+        break
+    
     net = Sequential()
     net.add(Conv1D(128, (256),
                    strides=(1),
                    activation='relu',
-                   input_shape=x_train.shape[1:]))
-    conv_output_size = net.layers[0].compute_output_shape(x_train.shape)[1]
+                   input_shape=input_shape[1::]))
+    conv_output_size = net.layers[0].compute_output_shape(input_shape)[1]
     net.add(Reshape((conv_output_size,128,1)))
     #net.add(Lambda(lambda x: K.abs(x)))
     net.add(MaxPooling2D(pool_size=(16, 1), strides=None,
@@ -116,11 +177,16 @@ def build_and_train_model(x_train, y_train, model_file):
     checkpoint = ModelCheckpoint(filepath, monitor='loss',
                                  verbose=0,
                                  save_best_only=False,save_weights_only=False,
-                                 mode='auto', period=5)
+                                 mode='auto', period=25)
     callbacks_list=[checkpoint]
 
-    hist = net.fit(x_train, y_train, validation_split=0.1,
-                   epochs=100, batch_size=64, callbacks=callbacks_list)
+    hist = net.fit_generator(train_gen,
+                             steps_per_epoch=x_train.shape[0]//batch_size,
+                             epochs=200, callbacks=callbacks_list,
+                             validation_data=val_gen,
+                             validation_steps=x_val.shape[0]//batch_size)
+#    hist = net.fit(x_train, y_train, validation_split=0.1,
+#                   epochs=100, batch_size=64, callbacks=callbacks_list)
 
 
     with h5py.File(model_file[:-3]+'_loss_history.h5', 'w') as lh:
@@ -134,9 +200,12 @@ def build_and_train_model(x_train, y_train, model_file):
 ######################################################
 
 def run_model(net, x_test, y_test):
+    gen = raw_generator(x_test, y_test, noise=0, no_shift=True,
+                        batch_size=x_test.shape[0], shuffle=False)
+    x_test = next(gen)[0]
     predictions = net.predict(x_test, batch_size=64)
-    #loss = net.evaluate(x_test, y_test)
-    #print "\nTEST LOSS:", loss
+    loss = net.evaluate(x_test, y_test)
+    print "\nTEST LOSS:", loss
     view_average_error(np.exp(y_test)-1,np.exp(predictions)-1)
     for i in range(100, 2000, 110):
         view_depth_maps(i, x_test, np.exp(y_test)-1, np.exp(predictions)-1)
@@ -177,15 +246,18 @@ def view_depth_maps(index, xtest, ytrue, ypred):
         for j in range(10):
             index = -1
 
-            while index == -1:
-                index = np.random.randint(2000)#ytrue.shape[0])
-                if np.sum(ytrue[index] > 7000) + np.sum(ytrue[index] ==0) < 20:
-                    true = np.reshape(ytrue[index], (12,16))
-                    pred = np.reshape(ypred[index], (12,16))
-                else:
-                    index = -1
+            index = np.random.randint(ytrue.shape[0])
+#            while index == -1:
+#                index = np.random.randint(ytrue.shape[0])
+#                if np.sum(ytrue[index] > 7000) + np.sum(ytrue[index] ==0) < 20:
+#                    true = np.reshape(ytrue[index], (12,16))
+#                    pred = np.reshape(ypred[index], (12,16))
+#                else:
+#                    index = -1
 
             print index  
+            true = np.reshape(ytrue[index], (12,16))
+            pred = np.reshape(ypred[index], (12,16))
             #true = np.log( 1 + np.reshape(ytrue[index], (12,16)))
             #pred = np.log(1 + np.reshape(ypred[index], (12,16)))
             error = pred - true
@@ -221,4 +293,5 @@ def view_depth_maps(index, xtest, ytrue, ypred):
 
 #####################################################
 
-main()
+if __name__ == "__main__":
+    main()

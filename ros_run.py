@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
-"""Ros node for for reconstructing depth using a pre-trained network.
-This is a hacked-together proof-of-concept.
+"""Ros node for for reconstructing depth in real-time using a
+pre-trained network.  This is a hacked-together proof-of-concept.
 
 """
 import time
@@ -73,7 +73,7 @@ class Recorder(object):
             # Get the depth prediction from the network
             predictions = self.model.predict(aligned, batch_size=1)
             predictions = np.exp(np.reshape(predictions, (12,16))) - 1
-            
+
             self.image_pub.publish(self.bridge.cv2_to_imgmsg(predictions))
 
             # Use matplotlib to show the audio and predicted depth
@@ -91,7 +91,7 @@ class Recorder(object):
             plt.draw()
             plt.pause(1e-17)
 
-                                 
+
             rate.sleep()
 
 
@@ -104,14 +104,14 @@ class Recorder(object):
         self.audio_recorder.record(self.record_duration)
         while not self.audio_recorder.done_recording():
             rospy.sleep(.005)
-                
+
         audio = self.audio_recorder.get_data()[1]
 
         # Reshape mono to be consistent with stereo
         if (len(audio.shape) == 1):
             audio = audio.reshape((-1, 1))
         return audio
-        
+
     def parse_command_line(self):
 
         parser = argparse.ArgumentParser(
@@ -121,18 +121,18 @@ class Recorder(object):
                             dest='channels',
                             metavar="NUM_CHANNELS",default=2,
                             help='number of audio channels to record')
-        
+
         parser.add_argument('--rate', type=int, metavar="RATE",
                             default=10, help='rate to record chirps')
 
         parser.add_argument('--duration', type=float, metavar="DURATION",
                             dest='record_duration',
                             default=.11, help='duration of audio recordings')
-        
+
         parser.add_argument('--delay', type=float, metavar="DELAY",
                             default=.0, help=('time in seconds to wait' +
                                                'start of playback and record'))
-        
+
         parser.add_argument('--volume', type=int, metavar="VOLUME",
                             default=75, help='volume (0-100)')
 
@@ -186,7 +186,7 @@ class Recorder(object):
     def close_file(self, num_recorded):
         self.audio_set.resize(tuple([num_recorded] +
                                     list(self.audio_set.shape[1:])))
-                                                          
+
         self.depth_set.resize(tuple([num_recorded] +
                                     list(self.depth_set.shape[1:])))
         if self.record_rgb:
@@ -200,11 +200,11 @@ class Recorder(object):
         if index == dset.shape[0]:
             dset.resize(tuple([index*2] + list(dset.shape[1:])))
         dset[index, ...] = item
-            
+
 
     def depth_callback(self, depth_image):
         self.latest_depth = self.bridge.imgmsg_to_cv2(depth_image)
-        
+
     def depth_rgb_callback(self, depth_image, rgb_image):
         self.lock.acquire()
         self.latest_depth = self.bridge.imgmsg_to_cv2(depth_image)
@@ -224,5 +224,3 @@ def adjusted_mse(y_true, y_pred):
 
 if __name__ == "__main__":
     Recorder()
-
-

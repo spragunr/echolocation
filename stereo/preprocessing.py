@@ -21,25 +21,23 @@ def main():
     '''files to change as necessary: > train_files - > test_files -
 
     '''
-    
-    train_files = ['ball_train1.h5', 'ball_train2.h5',
-                   'ball_train3.h5', 'ball_train4.h5',
-                   'ball_train5.h5']
-    
-    test_files = ['ball_test1.h5', 'ball_test2.h5', 'ball_test3.h5']
+
+    train_files = ['train100k.h5']
+
+    test_files = ['test100k.h5']
 
     if len(argv) != 2:
         print "usage: preprocessing.py collective_data_name"
         return
 
-    sets_file = argv[1] + '_sets.h5' #contains the components of the
-                                     #training and test sets
+    sets_file = argv[1]  #contains the components of the
+                         #training and test sets
 
     if os.path.isfile(sets_file):
         print "preprocessed training and test sets already exist under file '%s'" % sets_file
         return
 
-    path = os.getcwd()+'/ball_data/'
+    path = os.getcwd()+'/'
 
     train_size =  total_size(train_files, path)
     test_size =  total_size(test_files, path)
@@ -47,18 +45,18 @@ def main():
     sets = h5py.File(sets_file, 'w')
 
     print "Processing raw audio..."
-    preprocess_set(train_files, path, sets, train_size, 'audio',
+    preprocess_set(train_files, path, sets, train_size, 'audio_aligned',
                    'train_da', shape_digital_audio)
-    preprocess_set(test_files, path, sets, test_size, 'audio',
+    preprocess_set(test_files, path, sets, test_size, 'audio_aligned',
                    'test_da', shape_digital_audio)
 
 
-    print "Processing spectrograms..."
-    preprocess_set(train_files, path, sets, train_size, 'audio',
-                   'train_specs', shape_spectrograms)
-    preprocess_set(test_files, path, sets, test_size, 'audio',
-                   'test_specs', shape_spectrograms)
-
+#    print "Processing spectrograms..."
+#    preprocess_set(train_files, path, sets, train_size, 'audio_aligned',
+#                   'train_specs', shape_spectrograms)
+#    preprocess_set(test_files, path, sets, test_size, 'audio_aligned',
+#                   'test_specs', shape_spectrograms)
+ 
     print "Processing depth..."
     preprocess_set(train_files, path, sets, train_size, 'depth',
                    'train_depths', downsize)
@@ -101,7 +99,7 @@ def append_to_set(sets, data, index, total_size, set_name):
     '''
     if not set_name in sets:
         set_shape = tuple([total_size] + list(data.shape[1:]))
-        sets.create_dataset(set_name, set_shape)
+        sets.create_dataset(set_name, set_shape, dtype=data.dtype)
     sets[set_name][index:index+data.shape[0],...] = data
     return index + data.shape[0]
 
@@ -123,8 +121,27 @@ def total_size(files, path='./'):
 
 ######################################################
 ######################################################
-
-def downsize(depth_maps, method='min', factor=40):
+# def downsize(depth_maps, method='min', factor=40):
+#     '''
+#     @PURPOSE: downsizes a set of images
+#     @PARAMS: img - [numpy array] image to downsize
+#              method - [string] 'mean' or 'min'
+#              factor - [int] factor to downsize image by (default is 40)
+#     @RETURN: [numpy array] downsized images
+#     '''
+#     orig_dims = depth_maps.shape
+#     ds_dims = (orig_dims[0], orig_dims[1]/factor, orig_dims[2]/factor)
+#     downsized_map = np.zeros(ds_dims)
+#     for ind in range(depth_maps.shape[0]):
+#         print ind, "/", depth_maps.shape[0]
+#         for i in range(0, orig_dims[1], factor):
+#             for j in range(0, orig_dims[2], factor):
+#                 window = depth_maps[ind, i:i+factor, j:j+factor].flatten()
+#                 non_zero = np.delete(window, np.where(window==0))
+#                 if non_zero.size != 0:
+#                     downsized_map[ind, i/factor,j/factor] = np.min(non_zero)
+#     return downsized_map
+def downsize(depth_maps, factor=40):
     '''
     @PURPOSE: downsizes a set of images
     @PARAMS: img - [numpy array] image to downsize
@@ -132,35 +149,36 @@ def downsize(depth_maps, method='min', factor=40):
              factor - [int] factor to downsize image by (default is 40)
     @RETURN: [numpy array] downsized images
     '''
+    batch_size = 200
+    biggest = np.iinfo(depth_maps.dtype).max
     orig_dims = depth_maps.shape
     ds_dims = (orig_dims[0], orig_dims[1]/factor, orig_dims[2]/factor)
     downsized_map = np.zeros(ds_dims)
-    for ind in range(depth_maps.shape[0]):
+    for ind in range(0, depth_maps.shape[0], batch_size):
+        print ind, "/", depth_maps.shape[0]
+        batch = depth_maps[ind:ind+batch_size, ...]
+        batch[batch==0] = biggest
         for i in range(0, orig_dims[1], factor):
             for j in range(0, orig_dims[2], factor):
-                window = depth_maps[ind, i:i+factor, j:j+factor].flatten()
-                non_zero = np.delete(window, np.where(window==0))
-                if non_zero.size != 0:
-                    if method == 'mean':
-                        downsized_map[ind, i/factor,j/factor] = np.mean(non_zero)
-                    elif method == 'min':
-                        downsized_map[ind, i/factor,j/factor] = np.min(non_zero)
-                    else:
-                        print "UNRECOGNIZED DOWNSIZE METHOD"
-    return downsized_map
+                windows = batch[:, i:i+factor, j:j+factor].reshape(-1,
+                                                                  factor *factor)
+                downsized_map[ind:ind+batch_size, i/factor,j/factor] = np.min(windows, axis=1)
 
+        downsized_map[downsized_map==biggest] = 0
+    return downsized_map
 ######################################################
 
 def shape_digital_audio(audio):
-    train_AS = audio.shape
-    audio_input = np.empty((train_AS[0],train_AS[1]*2,1))
-    counter = 0
-    for j in audio:
-        combined = np.concatenate((j[:,0],j[:,1]))
-        combined = np.reshape(combined,(train_AS[1]*2,1))
-        audio_input[counter, ...] = combined
-        counter += 1
-    return audio_input
+    return audio
+    # train_AS = audio.shape
+    # audio_input = np.empty((train_AS[0],train_AS[1]*2,1))
+    # counter = 0
+    # for j in audio:
+    #     combined = np.concatenate((j[:,0],j[:,1]))
+    #     combined = np.reshape(combined,(train_AS[1]*2,1))
+    #     audio_input[counter, ...] = combined
+    #     counter += 1
+    # return audio_input
 
 ######################################################
 
