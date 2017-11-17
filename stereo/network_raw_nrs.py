@@ -5,6 +5,7 @@ import os
 import os.path
 import tensorflow as tf
 
+import keras
 from keras import regularizers
 from keras.layers.normalization import BatchNormalization
 from keras.callbacks import ModelCheckpoint
@@ -23,10 +24,11 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
 ######################################################
 
+
 def main():
 
     # files
-    model_file = '100k_raw_gen.h5'
+    model_file = 'prepped100k_decay_ratetmp.h5'
     sets_file = 'prepped100k.h5'
 
 
@@ -127,6 +129,7 @@ def raw_generator(x_train, y_train, batch_size=64, shift=.01,
 
 def build_and_train_model(x_train, y_train, model_file):
 
+    L2 = 0 #.001
     validation_split = .1
     batch_size = 64
     end_val = int(validation_split * x_train.shape[0])
@@ -146,29 +149,29 @@ def build_and_train_model(x_train, y_train, model_file):
     net.add(Conv1D(128, (256),
                    strides=(1),
                    activation='relu',
-                   input_shape=input_shape[1::]))
+                   input_shape=input_shape[1::],
+                   kernel_regularizer=regularizers.l2(L2)))
     conv_output_size = net.layers[0].compute_output_shape(input_shape)[1]
     net.add(Reshape((conv_output_size,128,1)))
-    #net.add(Lambda(lambda x: K.abs(x)))
     net.add(MaxPooling2D(pool_size=(16, 1), strides=None,
                              padding='valid'))
-    net.add(BatchNormalization())
-    net.add(Conv2D(64, (5,5), strides=(2,5), activation='relu'))
-    net.add(BatchNormalization())
-    net.add(Conv2D(64, (5,5), strides=(2,1), activation='relu'))
-    net.add(BatchNormalization())
-    net.add(Conv2D(32, (3,3), strides=(1,1), activation='relu'))
+    net.add(Conv2D(64, (5,5), strides=(2,5), activation='relu',
+                   kernel_regularizer=regularizers.l2(L2)))
+    net.add(Conv2D(64, (5,5), strides=(2,1), activation='relu',
+                   kernel_regularizer=regularizers.l2(L2)))
+    net.add(Conv2D(32, (3,3), strides=(1,1), activation='relu',
+                   kernel_regularizer=regularizers.l2(L2)))
     net.add(Flatten())
-    net.add(BatchNormalization())
-    net.add(Dense(600, activation='relu'))
-    net.add(BatchNormalization())
-    net.add(Dense(600, activation='relu'))
-    net.add(BatchNormalization())
-    net.add(Dense(600, activation='relu'))
-    net.add(BatchNormalization())
+    net.add(Dense(600, activation='relu',
+                  kernel_regularizer=regularizers.l2(L2)))
+    net.add(Dense(600, activation='relu',
+                  kernel_regularizer=regularizers.l2(L2)))
+    net.add(Dense(600, activation='relu',
+                  kernel_regularizer=regularizers.l2(L2)))
     net.add(Dense(192, activation='linear'))
-
-    net.compile(optimizer='adam', loss=adjusted_mse)
+    adam = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999,
+                                 epsilon=1e-08, decay=0.0)
+    net.compile(optimizer=adam, loss=adjusted_mse)
     net.summary()
     print "finished compiling"
 
@@ -178,7 +181,8 @@ def build_and_train_model(x_train, y_train, model_file):
                                  verbose=0,
                                  save_best_only=False,save_weights_only=False,
                                  mode='auto', period=25)
-    callbacks_list=[checkpoint]
+    lr_reducer = keras.callbacks.LearningRateScheduler(rate_schedule)
+    callbacks_list=[checkpoint, lr_reducer]
 
     hist = net.fit_generator(train_gen,
                              steps_per_epoch=x_train.shape[0]//batch_size,
@@ -196,6 +200,17 @@ def build_and_train_model(x_train, y_train, model_file):
     net.save(model_file)
     print "model saved as '%s'" %model_file
     return net
+
+######################################################
+def rate_schedule(epoch):
+    if epoch < 50:
+        return .001
+    if epoch < 100:
+        return .0005
+    if epoch < 150:
+        return .00025
+    else:
+        return .000125
 
 ######################################################
 
@@ -268,7 +283,7 @@ def view_depth_maps(index, xtest, ytrue, ypred):
             #min_depth = np.log(300)
             #max_depth = np.log(10000)
             min_depth = 300
-            max_depth = 7000
+            max_depth = 7000#1800
 
             ax0 = plt.subplot(10,4,j*4 + 1)
             audio_plot = plt.plot(xtest[index,...])
@@ -288,7 +303,6 @@ def view_depth_maps(index, xtest, ytrue, ypred):
             error_map = plt.imshow(error, clim=rng, cmap="Greys",
                                    interpolation='none')
             ax3.set_title("Squared Error Map")
-
         plt.show()
 
 #####################################################
