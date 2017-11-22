@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import os.path
+import argparse
+
 import tensorflow as tf
 
 import keras
@@ -18,6 +20,7 @@ from scipy import io, signal
 from sys import argv, exit
 from keras import backend as K
 
+
 tf.logging.set_verbosity(tf.logging.WARN)
 tf.logging.set_verbosity(tf.logging.INFO)
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
@@ -27,11 +30,22 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
 def main():
 
-    # files
-    model_file = 'prepped100k_decay_ratetmp.h5'
-    sets_file = 'prepped100k.h5'
+    parser = argparse.ArgumentParser()
+    parser.add_argument('data', help="preprocessed training and testing data")
+    parser.add_argument('model_folder',
+                        help="where to store models and results")
+    args = parser.parse_args()
+    if os.path.exists(args.model_folder):
+        print "output folder already exists."
+        return
+    else:
+        os.makedirs(args.model_folder)
 
 
+    model_file = args.model_folder + "/model.h5"
+    sets_file = args.data
+
+    
     from keras.backend.tensorflow_backend import set_session
     config = tf.ConfigProto()
     config.gpu_options.per_process_gpu_memory_fraction = 0.8
@@ -39,8 +53,7 @@ def main():
 
     if not os.path.isfile(model_file):
         print "building model..."
-        path = os.getcwd()+'/'
-        with h5py.File(path+sets_file, 'r') as sets:
+        with h5py.File(sets_file, 'r') as sets:
             x_train = sets['train_da'][:,0:2646,:]/32000.
             y_train = np.log(1. + sets['train_depths'][:].reshape(-1, 192))
 
@@ -54,8 +67,7 @@ def main():
 
     else:
         print "loading model..."
-        path = os.getcwd()+'/'
-        with h5py.File(path+sets_file, 'r') as sets:
+        with h5py.File(sets_file, 'r') as sets:
             x_test = sets['test_da'][:,0:2646,:]/32000.
             y_test = np.log(1. + sets['test_depths'][:].reshape(-1, 192))
         model = load_model(model_file, custom_objects={'adjusted_mse':adjusted_mse})
@@ -186,7 +198,7 @@ def build_and_train_model(x_train, y_train, model_file):
 
     hist = net.fit_generator(train_gen,
                              steps_per_epoch=x_train.shape[0]//batch_size,
-                             epochs=200, callbacks=callbacks_list,
+                             epochs=400, callbacks=callbacks_list,
                              validation_data=val_gen,
                              validation_steps=x_val.shape[0]//batch_size)
 #    hist = net.fit(x_train, y_train, validation_split=0.1,
@@ -203,11 +215,11 @@ def build_and_train_model(x_train, y_train, model_file):
 
 ######################################################
 def rate_schedule(epoch):
-    if epoch < 50:
-        return .001
     if epoch < 100:
+        return .001
+    if epoch < 200:
         return .0005
-    if epoch < 150:
+    if epoch < 300:
         return .00025
     else:
         return .000125
