@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import os.path
+import argparse
 
 from random import shuffle
 from scipy import signal
@@ -22,16 +23,19 @@ def main():
 
     '''
 
-    train_files = ['train100k.h5']
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--train', nargs='*', help='training files',
+                        required=True)
+    parser.add_argument('--test', nargs='*', help='testing files',
+                        required=True)
+    parser.add_argument('output_file')
+    args = parser.parse_args()
 
-    test_files = ['test100k.h5']
+    train_files = args.train
 
-    if len(argv) != 2:
-        print "usage: preprocessing.py collective_data_name"
-        return
+    test_files = args.test
 
-    sets_file = argv[1]  #contains the components of the
-                         #training and test sets
+    sets_file = args.output_file
 
     if os.path.isfile(sets_file):
         print "preprocessed training and test sets already exist under file '%s'" % sets_file
