@@ -13,6 +13,7 @@ import argparse
 
 from random import shuffle
 from scipy import signal
+import scipy.misc
 from sys import argv, exit
 
 #####################################################
@@ -48,6 +49,13 @@ def main():
 
     sets = h5py.File(sets_file, 'w')
 
+
+    print "Processing images..."
+    preprocess_set(train_files, path, sets, train_size, 'rgb',
+                   'train_rgb', downsize_rgb)
+    preprocess_set(test_files, path, sets, test_size, 'rgb',
+                   'test_rgb', downsize_rgb)
+
     print "Processing raw audio..."
     preprocess_set(train_files, path, sets, train_size, 'audio_aligned',
                    'train_da', shape_digital_audio)
@@ -67,7 +75,8 @@ def main():
     preprocess_set(test_files, path, sets, test_size, 'depth',
                    'test_depths', downsize)
 
-    
+
+
     sets.close()
     return
 
@@ -123,11 +132,22 @@ def total_size(files, path='./'):
             total += d['audio'].shape[0]
     return total
 
+def downsize_rgb(images, factor=16):
+    new_rows = images.shape[1]/factor
+    new_cols = images.shape[2]/factor
+    downsized = np.zeros((images.shape[0], new_rows, new_cols, 3),
+                         dtype=images.dtype)
+
+    for i in range(images.shape[0]):
+        downsized[i, ...] = scipy.misc.imresize(images[i,...],
+                                                size=(new_rows, new_cols))
+    return downsized
+
 ######################################################
 ######################################################
-# def downsize(depth_maps, method='min', factor=40):
+# def downsize_depth(depth_maps, method='min', factor=16):
 #     '''
-#     @PURPOSE: downsizes a set of images
+#     @PURPOSE: downsize_depths a set of images
 #     @PARAMS: img - [numpy array] image to downsize
 #              method - [string] 'mean' or 'min'
 #              factor - [int] factor to downsize image by (default is 40)
@@ -144,8 +164,8 @@ def total_size(files, path='./'):
 #                 non_zero = np.delete(window, np.where(window==0))
 #                 if non_zero.size != 0:
 #                     downsized_map[ind, i/factor,j/factor] = np.min(non_zero)
-#     return downsized_map
-def downsize(depth_maps, factor=40):
+#     return downsize_depthd_map
+def downsize_depth(depth_maps, method='min', factor=16):
     '''
     @PURPOSE: downsizes a set of images
     @PARAMS: img - [numpy array] image to downsize
@@ -153,6 +173,14 @@ def downsize(depth_maps, factor=40):
              factor - [int] factor to downsize image by (default is 40)
     @RETURN: [numpy array] downsized images
     '''
+
+    if method == 'min':
+        shrink = np.min
+    elif method == 'mean':
+        shrink = np.mean
+    else:
+        print("unrecoginzed resize method")
+
     batch_size = 200
     biggest = np.iinfo(depth_maps.dtype).max
     orig_dims = depth_maps.shape
@@ -161,14 +189,15 @@ def downsize(depth_maps, factor=40):
     for ind in range(0, depth_maps.shape[0], batch_size):
         print ind, "/", depth_maps.shape[0]
         batch = depth_maps[ind:ind+batch_size, ...]
-        batch[batch==0] = biggest
+        batch[batch == 0] = biggest
         for i in range(0, orig_dims[1], factor):
             for j in range(0, orig_dims[2], factor):
                 windows = batch[:, i:i+factor, j:j+factor].reshape(-1,
-                                                                  factor *factor)
-                downsized_map[ind:ind+batch_size, i/factor,j/factor] = np.min(windows, axis=1)
+                                                                   factor * factor)
 
-        downsized_map[downsized_map==biggest] = 0
+                downsized_map[ind:ind+batch_size, i/factor, j/factor] = shrink(windows, axis=1)
+
+        downsized_map[downsized_map == biggest] = 0
     return downsized_map
 ######################################################
 
