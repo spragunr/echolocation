@@ -125,7 +125,8 @@ def plot_1d_convolutions(model):
 ######################################################
 
 def raw_generator(x_train, y_train, batch_size=64, shift=.01,
-                  noise=.05, shuffle=True, tone_noise=.25):
+                  no_shift=False, noise=.05, shuffle=True,
+                  tone_noise=.25):
     num_samples = x_train.shape[0]
     sample_length = x_train.shape[1]
     result_length = int(sample_length * (1 - shift))
@@ -139,7 +140,7 @@ def raw_generator(x_train, y_train, batch_size=64, shift=.01,
             np.take(y_train,indices,axis=0,out=y_train)
 
         # Randomly crop the audio data...
-        if shift == 0:
+        if no_shift:
             start_ind = np.zeros(batch_size, dtype='int32')
         else:
             start_ind = np.random.randint(sample_length - result_length + 1,
@@ -179,8 +180,9 @@ def raw_generator(x_train, y_train, batch_size=64, shift=.01,
         yield x_data, y_data
 
 
-def raw_generator_stereo(x_train, y_train, batch_size=64, shift=.01,
-                         noise=.00, shuffle=True, tone_noise=.05):
+def raw_generator_stereo(x_train, y_train, batch_size=64,
+                         shift=.01,no_shift=False, noise=.00,
+                         shuffle=True, tone_noise=.05):
     num_samples = x_train.shape[0]
     sample_length = x_train.shape[1]
     result_length = int(sample_length * (1 - shift))
@@ -194,7 +196,7 @@ def raw_generator_stereo(x_train, y_train, batch_size=64, shift=.01,
             np.take(y_train,indices,axis=0,out=y_train)
 
         # Randomly crop the audio data...
-        if shift == 0:
+        if no_shift:
             start_ind = np.zeros(batch_size, dtype='int32')
         else:
             start_ind = np.random.randint(sample_length - result_length + 1,
@@ -313,12 +315,14 @@ def build_and_train_model(x_train, y_train, model_folder, lr,
     # y_train = y_train[end_val::, ...]
     x_val, y_val, x_train, y_train = validation_split_by_chunks(x_train, y_train)
 
-    train_gen = raw_generator_stereo(x_train, y_train, batch_size=batch_size, shift=.01,
-                                     noise=.05, shuffle=True, tone_noise=.1)
+    train_gen = raw_generator_stereo(x_train, y_train, batch_size=batch_size, shift=.02,
+                                     noise=.05, shuffle=True, tone_noise=0)
 
     # Create validation set:
-    val_gen = raw_generator_stereo(x_val, y_val, batch_size=batch_size, shift=0.0,
-                                   noise=.00, tone_noise=0)
+    val_gen = raw_generator_stereo(x_val, y_val,
+                                   batch_size=batch_size, shift=0.02,
+                                   no_shift=True, noise=.00,
+                                   tone_noise=0)
     #x_val, y_val = val_gen.next()
 
     x_sample, _ = train_gen.next()
@@ -685,7 +689,7 @@ class LRReducer(keras.callbacks.LearningRateScheduler):
 ######################################################
 
 def run_model(net, x_test, y_test):
-    gen = raw_generator_stereo(x_test, y_test, noise=0, shift=0,
+    gen = raw_generator_stereo(x_test, y_test, noise=0, shift=0.02,no_shift=True,
                                batch_size=x_test.shape[0], shuffle=False, tone_noise=0)
     x_test = next(gen)[0]
     predictions = net.predict(x_test, batch_size=64)
