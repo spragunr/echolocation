@@ -16,6 +16,7 @@ from scipy import signal
 import scipy.misc
 from sys import argv, exit
 
+import depth_to_xyz
 #####################################################
 #####################################################
 
@@ -29,6 +30,16 @@ def main():
                         required=True)
     parser.add_argument('--test', nargs='*', help='testing files',
                         required=True)
+
+    parser.add_argument('--store-closest', dest='store_closest',
+                        help='extract and store nearest point',
+                        default=False, action='store_true')
+
+    parser.add_argument('--camera-calib',
+                        help='yaml calibration file for depth camera',
+                        default='xtion.yaml')
+    
+    
     parser.add_argument('output_file')
     args = parser.parse_args()
 
@@ -42,26 +53,34 @@ def main():
         print "preprocessed training and test sets already exist under file '%s'" % sets_file
         return
 
-    path = os.getcwd()+'/'
-
-    train_size =  total_size(train_files, path)
-    test_size =  total_size(test_files, path)
+    train_size =  total_size(train_files)
+    test_size =  total_size(test_files)
 
     sets = h5py.File(sets_file, 'w')
 
+    if args.store_closest:
+        print "Storing closest points..."
+        method = lambda depth_maps: depth_to_closest_point(depth_maps,
+                                                           args.camera_calib)
+        
+        preprocess_set(train_files, sets, train_size, 'depth',
+                       'train_closest', method, dtype=np.float32)
+        preprocess_set(test_files, sets, test_size, 'depth',
+                       'test_closest', method,dtype=np.float32)
 
     print "Processing images..."
-    preprocess_set(train_files, path, sets, train_size, 'rgb',
+    preprocess_set(train_files, sets, train_size, 'rgb',
                    'train_rgb', downsize_rgb)
-    preprocess_set(test_files, path, sets, test_size, 'rgb',
+    preprocess_set(test_files, sets, test_size, 'rgb',
                    'test_rgb', downsize_rgb)
 
     print "Processing raw audio..."
-    preprocess_set(train_files, path, sets, train_size, 'audio_aligned',
+    preprocess_set(train_files, sets, train_size, 'audio_aligned',
                    'train_da', shape_digital_audio)
-    preprocess_set(test_files, path, sets, test_size, 'audio_aligned',
+    preprocess_set(test_files, sets, test_size, 'audio_aligned',
                    'test_da', shape_digital_audio)
 
+    
 
 #    print "Processing spectrograms..."
 #    preprocess_set(train_files, path, sets, train_size, 'audio_aligned',
@@ -70,10 +89,10 @@ def main():
 #                   'test_specs', shape_spectrograms)
  
     print "Processing depth..."
-    preprocess_set(train_files, path, sets, train_size, 'depth',
-                   'train_depths', downsize)
-    preprocess_set(test_files, path, sets, test_size, 'depth',
-                   'test_depths', downsize)
+    preprocess_set(train_files, sets, train_size, 'depth',
+                   'train_depths', downsize_depth)
+    preprocess_set(test_files, sets, test_size, 'depth',
+                   'test_depths', downsize_depth)
 
 
 
@@ -85,21 +104,21 @@ def main():
 ######################################################
 ######################################################
 
-def preprocess_set(data_files, path, sets, total_size, data_name,
-                   set_name, process_func):
+def preprocess_set(data_files, sets, total_size, data_name,
+                   set_name, process_func, dtype=None):
     index = 0
     for f in data_files:
         print f
-        with h5py.File(path + f, 'r') as d:
+        with h5py.File(f, 'r') as d:
             data = process_func(d[data_name])
             index = append_to_set(sets, data, index,
-                                  total_size, set_name)
+                                  total_size, set_name, dtype)
 
 ######################################################
 ######################################################
 
 
-def append_to_set(sets, data, index, total_size, set_name):
+def append_to_set(sets, data, index, total_size, set_name, dtype):
     '''
     @PURPOSE: Append preprocessed data to the appropriate set the
               data set will be created if it does not exist.
@@ -110,9 +129,11 @@ def append_to_set(sets, data, index, total_size, set_name):
              set_name - [string] name of set to append to
     @RETURN: [int] Next index for an append
     '''
+    if dtype == None:
+        dtype = data.dtype
     if not set_name in sets:
         set_shape = tuple([total_size] + list(data.shape[1:]))
-        sets.create_dataset(set_name, set_shape, dtype=data.dtype)
+        sets.create_dataset(set_name, set_shape, dtype=dtype)
     sets[set_name][index:index+data.shape[0],...] = data
     return index + data.shape[0]
 
@@ -120,7 +141,7 @@ def append_to_set(sets, data, index, total_size, set_name):
 ######################################################
 ######################################################
 
-def total_size(files, path='./'):
+def total_size(files):
     '''
     @PURPOSE: determine the total number of data points in a set of h5 files
     @PARAMS: files - [list of strings] file names
@@ -128,10 +149,32 @@ def total_size(files, path='./'):
     '''
     total = 0
     for name in files:
-        with h5py.File(path+name, 'r') as d:
+        with h5py.File(name, 'r') as d:
             total += d['audio'].shape[0]
     return total
 
+######################################################
+######################################################
+
+
+def depth_to_closest_point(depth_maps, cam_file):
+    cam_info = depth_to_xyz.parse_calibration_yaml(cam_file)
+    points = np.zeros((depth_maps.shape[0], 3), dtype=np.float32)
+
+    for i in range(depth_maps.shape[0]):
+        pc = depth_to_xyz.depth_map_to_point_cloud(depth_maps[i, ...], cam_info)
+        closest = pc[np.argmin(pc[:, 2]), ...]
+        points[i, ...] = closest
+        if i % 100 == 0:
+            print i, "/", depth_maps.shape[0]
+    return points
+
+
+
+######################################################
+######################################################
+
+    
 def downsize_rgb(images, factor=16):
     new_rows = images.shape[1]/factor
     new_cols = images.shape[2]/factor
@@ -141,6 +184,8 @@ def downsize_rgb(images, factor=16):
     for i in range(images.shape[0]):
         downsized[i, ...] = scipy.misc.imresize(images[i,...],
                                                 size=(new_rows, new_cols))
+        if i % 100 == 0:
+            print i, "/", images.shape[0]
     return downsized
 
 ######################################################
@@ -185,7 +230,7 @@ def downsize_depth(depth_maps, method='min', factor=16):
     biggest = np.iinfo(depth_maps.dtype).max
     orig_dims = depth_maps.shape
     ds_dims = (orig_dims[0], orig_dims[1]/factor, orig_dims[2]/factor)
-    downsized_map = np.zeros(ds_dims)
+    downsized_map = np.zeros(ds_dims, dtype=depth_maps.dtype)
     for ind in range(0, depth_maps.shape[0], batch_size):
         print ind, "/", depth_maps.shape[0]
         batch = depth_maps[ind:ind+batch_size, ...]

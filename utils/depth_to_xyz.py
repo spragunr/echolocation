@@ -94,15 +94,17 @@ def main():
         for i in range(d['depth'].shape[0]):
             img = d['depth'][i, ...]
             pc = depth_map_to_point_cloud(img, cam_info)
+            closest =  pc[np.argmin(pc[:,2]),...]
 
-            # plt.imshow(img)
-            # fig = plt.figure()
-            # ax = fig.add_subplot(111, projection='3d')
-            # ax.scatter(pc[:, 0], pc[:, 2], pc[:, 1], marker='s')
-            # ax.set_xlabel('X')
-            # ax.set_ylabel('Z')
-            # ax.set_zlabel('Y')
-            # plt.show()
+            plt.imshow(img)
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            ax.scatter(pc[:, 0], pc[:, 2], pc[:, 1], marker='s')
+            ax.scatter(closest[0], closest[2], closest[1],marker='o',c=(0,1,0), s=140)
+            ax.set_xlabel('X')
+            ax.set_ylabel('Z')
+            ax.set_zlabel('Y')
+            plt.show()
             print i
 
 if __name__ == "__main__":
