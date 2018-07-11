@@ -45,6 +45,18 @@ def main():
     parser.add_argument('--test-model',  default='',
                         help="model to test")
 
+    parser.add_argument('--random-shift', type=float, default=.02,
+                        help="fraction random shift for augmentation")
+    parser.add_argument('--white-noise', type=float, default=0,
+                        help="multiplicative noise added for augmentation")
+    parser.add_argument('--tone-noise', type=float, default=0,
+                        help="additive sin wave noise added for augmentation")
+
+    parser.add_argument('--predict-closest', dest='predict_closest',
+                        help='learn to predict the 3d position of the closest point',
+                        default=False, action='store_true')
+    
+
     args = parser.parse_args()
 
     sets_file = args.data
@@ -75,19 +87,26 @@ def train_main(args):
     # Load testing data...
     with h5py.File(args.data, 'r') as sets:
         x_test = sets['test_da'][:,0:2646,:]/32000.
-        y_test = np.log(1. + sets['test_depths'][:].reshape(-1, TARGET_SIZE))
+        if args.predict_closest:
+            y_test = sets['test_closest'][:]
+        else:
+            y_test = np.log(1. + sets['test_depths'][:].reshape(-1, TARGET_SIZE))
         print y_test.shape
 
     print "loading data..."
     with h5py.File(args.data, 'r') as sets:
         x_train = sets['train_da'][:, 0:2646, :]/32000.
-        y_train = np.log(1. + sets['train_depths'][:].reshape(-1, TARGET_SIZE))
+        if args.predict_closest:
+            y_train = sets['train_closest'][:]
+        else:
+            y_train = np.log(1. + sets['train_depths'][:].reshape(-1, TARGET_SIZE))
         
     print "building and training model..."
     model = build_and_train_model(x_train, y_train,
                                   args.dir, args.lr,
                                   args.lr_reduce_every,
-                                  args.epochs)
+                                  args.epochs, args.random_shift, args.white_noise,
+                                  args.tone_noise, args.predict_closest)
     run_model(model, x_test, y_test)
 
 
@@ -95,17 +114,61 @@ def test_main(args):
     # Load testing data...
     with h5py.File(args.data, 'r') as sets:
         x_test = sets['test_da'][:,0:2646,:]/32000.
-        y_test = np.log(1. + sets['test_depths'][:].reshape(-1, TARGET_SIZE))
+        images = sets['test_rgb'][:]
+        if args.predict_closest:
+            y_test = sets['test_closest'][:]
+        else:
+            y_test = np.log(1. + sets['test_depths'][:].reshape(-1, TARGET_SIZE))
 
     print "loading model..."
     model = load_model(args.test_model,
                        custom_objects={'adjusted_mse':adjusted_mse})
     model.get_layer(name='model_1').summary()
     model.summary()
+
+    gen = raw_generator(x_test, y_test, noise=0,
+                        shift=args.random_shift ,no_shift=True,
+                        batch_size=x_test.shape[0], shuffle=False,
+                        tone_noise=0)
+    x_test = next(gen)[0]
+    predictions = model.predict(x_test, batch_size=64)
+    loss = model.evaluate(x_test, y_test)
+    print "\nTEST LOSS:", loss
+
+
     plot_1d_convolutions(model)
 
-    run_model(model, x_test, y_test)
+    if args.predict_closest:
+        # indices = y_test[:,2] < 1.2
+        # y_test = y_test[indices,:]
+        # predictions = predictions[indices, :]
+        distances = np.sqrt(np.sum((y_test - predictions) ** 2, axis=-1))
+        plt.hist(distances, bins='auto',normed=1, histtype='step', cumulative=1)
+        
+        plt.show()
+        view_closest(y_test, predictions, images)
+    else:
+        view_average_error(np.exp(y_test)-1,np.exp(predictions)-1)
+        for i in range(100, 2000, 110):
+            view_depth_maps(i, x_test[0], np.exp(y_test)-1,
+                            np.exp(predictions)-1)
+
+def view_closest(y_test, predictions, images):
+    from mpl_toolkits.mplot3d import Axes3D
     
+    for i in range(0,y_test.shape[0], 10):
+        fig = plt.figure()
+        fig.add_subplot(121)
+        plt.imshow(images[i,...], interpolation='none')
+        ax = fig.add_subplot(122, projection='3d')
+        ax.set_xlim(-1.1, 1.1)
+        ax.set_ylim(.3, 2)
+        ax.set_zlim(-1, 1)
+        ax.scatter(y_test[i, 0], y_test[i, 2], -y_test[i, 1],
+                   marker='s')
+        ax.scatter(predictions[i, 0], predictions[i, 2],
+                   -predictions[i, 1], marker='+')
+        plt.show()
 ######################################################
 ######################################################
 
@@ -121,68 +184,9 @@ def plot_1d_convolutions(model):
     print W.shape
 
 
-######################################################
-######################################################
-
-def raw_generator(x_train, y_train, batch_size=64, shift=.01,
-                  no_shift=False, noise=.05, shuffle=True,
-                  tone_noise=.25):
-    num_samples = x_train.shape[0]
-    sample_length = x_train.shape[1]
-    result_length = int(sample_length * (1 - shift))
-    batch_index = 0
-
-    while True:
-        # Shuffle before each epoch
-        if batch_index == 0 and shuffle:
-            indices = np.random.permutation(x_train.shape[0])
-            np.take(x_train,indices,axis=0,out=x_train)
-            np.take(y_train,indices,axis=0,out=y_train)
-
-        # Randomly crop the audio data...
-        if no_shift:
-            start_ind = np.zeros(batch_size, dtype='int32')
-        else:
-            start_ind = np.random.randint(sample_length - result_length + 1,
-                                          size=batch_size)
-        x_data = np.empty((batch_size, result_length * 2, 1))
-        for i in range(batch_size):
-            
-            # Concatenate the two channels...
-            x_data[i, 0:result_length, 0] = x_train[batch_index + i,
-                                                    start_ind[i]:start_ind[i] + result_length, 0]
-            x_data[i, result_length::, 0] = x_train[batch_index + i,
-                                                    start_ind[i]:start_ind[i] + result_length, 1]
-
-        # Add a sin wave with random freqency and phase...
-        if tone_noise > 0:
-            t = np.linspace(0, result_length /44100., result_length * 2 )
-            for i in range(batch_size):
-                pitch = np.random.random() * 115.0 + 20 # midi pitch
-                amp = np.random.random() * tone_noise
-                #people.sju.edu/~rhall/SoundingNumber/pitch_and_frequency.pdf 
-                freq = 440 * 2**((pitch - 69)/12.)
-                phase = np.pi * 2 * np.random.random()
-                tone = np.sin(2 * np.pi * freq * t + phase) * amp
-                x_data[i, :, 0] += tone
-
-            
-        # Random multiplier for all samples...
-        x_data *= (1. + np.random.randn(*x_data.shape) * noise)
-
-        y_data = y_train[batch_index:batch_index + batch_size, ...]
-
-        batch_index += batch_size
-
-        if batch_index > (num_samples - batch_size):
-            batch_index = 0
-
-        yield x_data, y_data
-
-
-def raw_generator_stereo(x_train, y_train, batch_size=64,
-                         shift=.01,no_shift=False, noise=.00,
-                         shuffle=True, tone_noise=.05):
+def raw_generator(x_train, y_train, batch_size=64,
+                  shift=.01,no_shift=False, noise=.00,
+                  shuffle=True, tone_noise=.05):
     num_samples = x_train.shape[0]
     sample_length = x_train.shape[1]
     result_length = int(sample_length * (1 - shift))
@@ -216,7 +220,7 @@ def raw_generator_stereo(x_train, y_train, batch_size=64,
             t = np.linspace(0, result_length /44100., result_length)
             for i in range(batch_size):
                 # max frequency about 8000hz:
-                pitch = np.random.random() * 99 + 20 #* 115.0 + 20 # midi pitch
+                pitch = np.random.random() * 115.0 + 20 # midi pitch
                 amp = np.random.random() * tone_noise
                 #people.sju.edu/~rhall/SoundingNumber/pitch_and_frequency.pdf 
                 freq = 440 * 2**((pitch - 69)/12.)
@@ -300,35 +304,27 @@ def validation_split_by_chunks(x_train, y_train, split=.1, chunk_size=200):
 
 
 def build_and_train_model(x_train, y_train, model_folder, lr,
-                          reduce_every, epochs):
+                          reduce_every, epochs, shift, white_noise,
+                          tone_noise, predict_closest):
 
     L2 = 0#.00001
     validation_split = .1
     batch_size = 64
 
-    # #Split validation data from the beginning of the training data...
-    # end_val = int(validation_split * x_train.shape[0])
-    # x_val = x_train[0:end_val, ...]
-    # y_val = y_train[0:end_val, ...]
-
-    # x_train = x_train[end_val::, ...]
-    # y_train = y_train[end_val::, ...]
     x_val, y_val, x_train, y_train = validation_split_by_chunks(x_train, y_train)
 
-    train_gen = raw_generator_stereo(x_train, y_train, batch_size=batch_size, shift=.02,
-                                     noise=.05, shuffle=True, tone_noise=0)
+    train_gen = raw_generator(x_train, y_train, batch_size=batch_size, shift=shift,
+                              noise=white_noise, shuffle=True, tone_noise=tone_noise)
 
-    # Create validation set:
-    val_gen = raw_generator_stereo(x_val, y_val,
-                                   batch_size=batch_size, shift=0.02,
-                                   no_shift=True, noise=.00,
-                                   tone_noise=0)
-    #x_val, y_val = val_gen.next()
+    val_gen = raw_generator(x_val, y_val,
+                            batch_size=batch_size, shift=shift,
+                            no_shift=True, noise=.00,
+                            tone_noise=0)
 
     x_sample, _ = train_gen.next()
     input_shape = x_sample[0].shape
    
-    net = build_model_shared_small(input_shape, L2)
+    net = build_model(input_shape, L2, predict_closest)
 
     adam = keras.optimizers.Adam(lr=lr, beta_1=0.9, beta_2=0.999,
                                  epsilon=1e-08, decay=0.0)
@@ -361,85 +357,15 @@ def build_and_train_model(x_train, y_train, model_folder, lr,
     return net
 
 
-    x = Flatten()(merged)
-    x = Dense(600, activation='relu',use_bias=True,
-              kernel_regularizer=regularizers.l2(L2))(x)
-    x = Dense(600, activation='relu',use_bias=True,
-              kernel_regularizer=regularizers.l2(L2))(x)
-    net = Dense(1200, activation='linear')(x)
-    net = Model(inputs=[input_audio_left, input_audio_right], outputs=net)
-    return net
 
 
-
-def build_model_shared_deep(input_shape, L2):
+def build_model(input_shape, L2, predict_closest=False):
     # First build a model to handle a single channel...
     input_audio = Input(shape=input_shape[1::])
-    
- 
-    conv = Conv1D(125, (512),
-               strides=(1), use_bias=True,
-               activation='relu',
-                  input_shape=input_shape[1::])
-    x = conv(input_audio)
-    conv_output_size = conv.output_shape[1]
-    x = Reshape((conv_output_size, 125, 1))(x)
-    x = MaxPooling2D(pool_size=(16, 1), strides=None,
-                     padding='valid')(x)
-    x = Conv2D(64, (5,5), strides=(2,5), activation='relu', use_bias=True,
-                   kernel_regularizer=regularizers.l2(L2))(x)
-    x = Conv2D(64, (5,5), strides=(2,1), activation='relu', use_bias=True,
-                   kernel_regularizer=regularizers.l2(L2))(x)
-    out = Conv2D(32, (3,3), strides=(1,1), activation='relu', use_bias=True,
-                     kernel_regularizer=regularizers.l2(L2))(x)
-    channel_model = Model(input_audio, out)
-    input_audio_left = Input(shape=input_shape[1::])
-    input_audio_right = Input(shape=input_shape[1::])
 
-    left_out = channel_model(input_audio_left)
-    right_out = channel_model(input_audio_right)
-
-    channel_model.summary()
-    
-    merged = keras.layers.concatenate([left_out, right_out], axis=-1)
-    x = Conv2D(64, (3,3), strides=(1,1), activation='relu',padding='same',
-                    kernel_regularizer=regularizers.l2(L2))(merged)
-    x = Conv2D(64, (3,3), strides=(1,1), activation='relu',padding='same',
-                    kernel_regularizer=regularizers.l2(L2))(x)
-
-    x = Flatten()(x)
-    x = Dense(600, activation='relu',use_bias=True,
-              kernel_regularizer=regularizers.l2(L2))(x)
-    x = Dense(600, activation='relu',use_bias=True,
-              kernel_regularizer=regularizers.l2(L2))(x)
-    x = Dense(2400, activation='linear')(x)
-    
-    x = Reshape((20, 15, 8))(x)
-    x = UpSampling2D(size=2)(x) # 4x40x30
-
-    x = Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
-                    kernel_regularizer=regularizers.l2(L2))(x)
-    x = Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
-                    kernel_regularizer=regularizers.l2(L2))(x)
-    
-    x = Conv2D(1, (3,3), strides=(1,1), activation='linear',padding='same')(x)
-    net = Flatten()(x)
-    
-    #net.add(Flatten())
-    
-    net = Model(inputs=[input_audio_left, input_audio_right], outputs=net)
-    return net
-
-
-
-def build_model_shared_small(input_shape, L2):
-    # First build a model to handle a single channel...
-    input_audio = Input(shape=input_shape[1::])
-    
- 
     conv = Conv1D(125, (256),
-               strides=(1), use_bias=True,
-               activation='relu',
+                  strides=(1), use_bias=True,
+                  activation='relu',
                   input_shape=input_shape[1::])
     x = conv(input_audio)
     conv_output_size = conv.output_shape[1]
@@ -468,204 +394,28 @@ def build_model_shared_small(input_shape, L2):
               kernel_regularizer=regularizers.l2(L2))(x)
     x = Dense(600, activation='relu',use_bias=True,
               kernel_regularizer=regularizers.l2(L2))(x)
-    x = Dense(600, activation='linear')(x)
-    
-    x = Reshape((20, 15, 2))(x)
-    x = UpSampling2D(size=2)(x) # 4x40x30
+    x = Dense(600, activation='relu')(x)
 
-    x = Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
-                    kernel_regularizer=regularizers.l2(L2))(x)
-    x = Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
-                    kernel_regularizer=regularizers.l2(L2))(x)
+    if predict_closest:
+        x = Dense(3, activation='linear')(x)
+    else:
     
-    x = Conv2D(1, (3,3), strides=(1,1), activation='linear',padding='same')(x)
-    net = Flatten()(x)
+        x = Reshape((20, 15, 2))(x)
+        x = UpSampling2D(size=2)(x) # 4x40x30
+        
+        x = Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
+                   kernel_regularizer=regularizers.l2(L2))(x)
+        x = Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
+                   kernel_regularizer=regularizers.l2(L2))(x)
+        
+        x = Conv2D(1, (3,3), strides=(1,1), activation='linear',padding='same')(x)
+        x = Flatten()(x)
     
     #net.add(Flatten())
     
-    net = Model(inputs=[input_audio_left, input_audio_right], outputs=net)
+    net = Model(inputs=[input_audio_left, input_audio_right], outputs=x)
     return net
 
-
-
-def build_model_shared(input_shape, L2):
-    # First build a model to handle a single channel...
-    input_audio = Input(shape=input_shape[1::])
-    
- 
-    conv = Conv1D(120, (256),
-               strides=(2), use_bias=False,
-               activation='relu',
-               input_shape=input_shape[1::],
-               kernel_regularizer=regularizers.l2(L2))
-    x = conv(input_audio)
-    x = layers.BatchNormalization(momentum=.99)(x)
-    conv_output_size = conv.output_shape[1]
-    x = Reshape((conv_output_size, 120, 1))(x)
-    x = MaxPooling2D(pool_size=(4, 1), strides=None,
-                     padding='valid')(x)
-    x = Conv2D(64, (5,5), strides=(2,5), activation='relu', use_bias=False,padding='same',
-                   kernel_regularizer=regularizers.l2(L2))(x)
-    x = layers.BatchNormalization(momentum=.99)(x)
-    x = Conv2D(64, (5,5), strides=(2,1), activation='relu', use_bias=False,padding='same',
-                   kernel_regularizer=regularizers.l2(L2))(x)
-    x = layers.BatchNormalization(momentum=.99)(x)
-    out = Conv2D(32, (3,3), strides=(1,1), activation='relu', use_bias=False,padding='same',
-                     kernel_regularizer=regularizers.l2(L2))(x)
-    out = layers.BatchNormalization(momentum=.99)(out)
-    channel_model = Model(input_audio, out)
-    input_audio_left = Input(shape=input_shape[1::])
-    input_audio_right = Input(shape=input_shape[1::])
-
-    left_out = channel_model(input_audio_left)
-    right_out = channel_model(input_audio_right)
-    
-    merged = keras.layers.concatenate([left_out, right_out], axis=-1)
-
-    x = Conv2D(32, (3,3), strides=(1,1), activation='relu', use_bias=False,padding='same',
-           kernel_regularizer=regularizers.l2(L2))(merged)
-    x = layers.BatchNormalization(momentum=.99)(x)
-    x = Conv2D(32, (3,3), strides=(1,1), activation='relu', use_bias=False,padding='same',
-           kernel_regularizer=regularizers.l2(L2))(x)
-    x = layers.BatchNormalization(momentum=.99)(x)
-    x = Flatten()(x)
-    
-    
-    x = Dense(600, activation='relu',use_bias=False,
-              kernel_regularizer=regularizers.l2(L2))(x)
-    x = layers.BatchNormalization(momentum=.99)(x)
-    x = Dense(600, activation='relu',use_bias=False,
-              kernel_regularizer=regularizers.l2(L2))(x)
-    x = layers.BatchNormalization(momentum=.99)(x)
-    net = Dense(1200, activation='linear',
-                  kernel_regularizer=regularizers.l2(L2))(x)
-    net = Model(inputs=[input_audio_left, input_audio_right], outputs=net)
-    return net
-
-
-def build_model_new(input_shape, L2):
-    inputs = Input(shape=input_shape[1::])
-    conv = Conv1D(100, (256),
-               strides=(2), use_bias=True,
-               activation='elu',
-               input_shape=input_shape[1::],
-               kernel_regularizer=regularizers.l2(L2))
-    x = conv(inputs)
-    #x = layers.BatchNormalization(momentum=.99)(x)
-    conv_output_size = conv.output_shape[1]
-    x = Reshape((conv_output_size, 100, 1))(x)
-    x = MaxPooling2D(pool_size=(8, 1), strides=None,
-                     padding='valid')(x)
-
-    
-    
-    x = Conv2D(32, (3, 3), strides=(2, 2), use_bias=True,
-               activation='elu',padding='same',
-               kernel_regularizer=regularizers.l2(L2))(x)
-    #x = layers.BatchNormalization(momentum=.99)(x)
-    x = Conv2D(128, (3, 3), strides=(2, 2), use_bias=True,
-               activation='elu',padding='same',
-               kernel_regularizer=regularizers.l2(L2))(x)
-    #x = layers.BatchNormalization(momentum=.99)(x)
-
-    for i in range(4):
-        residual = x
-
-        for j in range(3):
-            x = layers.Activation('elu')(x)
-            x = layers.SeparableConv2D(128, (3, 3),
-                                       padding='same',
-                                       use_bias=True)(x)
-            #x = layers.BatchNormalization(momentum=.99)(x)
-        x = layers.add([x, residual])
-
-    x = layers.Activation('elu')(x)
-    x = layers.SeparableConv2D(16, (3, 3),
-                               padding='same',
-                               use_bias=True)(x)
-    #x = layers.BatchNormalization(momentum=.99)(x)
-    x = Flatten()(x)
-  
-   
-    x = Dense(600, activation='elu',use_bias=True,
-              kernel_regularizer=regularizers.l2(L2))(x)
-    #x = layers.BatchNormalization(momentum=.99)(x)
-    x = Dense(600, activation='elu',use_bias=True,
-              kernel_regularizer=regularizers.l2(L2))(x)
-    #x = layers.BatchNormalization(momentum=.99)(x)
-    net = Dense(1200, activation='linear',
-                  kernel_regularizer=regularizers.l2(L2))(x)
-
-    # net.add(Reshape((40, 30, 1)))
-    # net.add(Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
-    #                kernel_regularizer=regularizers.l2(L2)))
-    # net.add(Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
-    #                kernel_regularizer=regularizers.l2(L2)))
-    # net.add(Conv2D(1, (3,3), strides=(1,1), activation='linear',padding='same',
-    #                kernel_regularizer=regularizers.l2(L2)))
-
-    # net.add(Flatten())
-    net = Model(inputs=inputs, outputs=net)
-    return net
-
-
-
-def build_model(input_shape, L2):
-    net = Sequential()
-    
-    # net.add(Conv1D(120, (512),
-    #                strides=(1),
-    #                activation='relu',
-    #                input_shape=input_shape[1::],
-    #                kernel_regularizer=regularizers.l2(L2)))
-    # conv_output_size = net.layers[0].compute_output_shape(input_shape)[1]
-    # net.add(Reshape((conv_output_size,120,1)))
-    # net.add(MaxPooling2D(pool_size=(16, 1), strides=None,
-    #                      padding='valid'))
-    # net.add(Conv2D(64, (5,5), strides=(2,5), activation='relu',
-    #                kernel_regularizer=regularizers.l2(L2)))
-    # net.add(Conv2D(64, (5,5), strides=(2,1), activation='relu',
-    #                kernel_regularizer=regularizers.l2(L2)))
-    # net.add(Conv2D(32, (3,3), strides=(1,1), activation='relu',
-    #                kernel_regularizer=regularizers.l2(L2)))
-    # net.add(Flatten())
-    
-    net.add(Conv1D(100, (512),
-                   strides=(1),
-                   activation='relu',
-                   input_shape=input_shape[1::],
-                   kernel_regularizer=regularizers.l2(L2)))
-    conv_output_size = net.layers[0].compute_output_shape(input_shape)[1]
-    net.add(Reshape((conv_output_size, 100, 1)))
-    net.add(MaxPooling2D(pool_size=(16, 1), strides=None,
-                         padding='valid'))
-    net.add(Conv2D(32, (3, 3), strides=(2, 2), activation='relu',padding='same',
-                   kernel_regularizer=regularizers.l2(L2)))
-    net.add(Conv2D(32, (3, 3), strides=(2, 2), activation='relu',padding='same',
-                   kernel_regularizer=regularizers.l2(L2)))
-    #net.add(Conv2D(32, (3, 3), strides=(1, 1), activation='relu',padding='same',
-    #               kernel_regularizer=regularizers.l2(L2)))
-    net.add(Conv2D(16, (1, 1), strides=(1, 1), activation='relu',padding='same',
-                   kernel_regularizer=regularizers.l2(L2)))
-    
-    net.add(Flatten())
-    net.add(Dense(600, activation='relu',
-                  kernel_regularizer=regularizers.l2(L2)))
-    net.add(Dense(600, activation='relu',
-                  kernel_regularizer=regularizers.l2(L2)))
-    net.add(Dense(1200, activation='relu',
-                  kernel_regularizer=regularizers.l2(L2)))
-
-    net.add(Reshape((40, 30, 1)))
-    net.add(Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
-                   kernel_regularizer=regularizers.l2(L2)))
-    net.add(Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
-                   kernel_regularizer=regularizers.l2(L2)))
-    net.add(Conv2D(1, (3,3), strides=(1,1), activation='linear',padding='same',
-                   kernel_regularizer=regularizers.l2(L2)))
-
-    net.add(Flatten())
-    return net
 
 
 
@@ -685,19 +435,6 @@ class LRReducer(keras.callbacks.LearningRateScheduler):
         else:
             return lr
 
-
-######################################################
-
-def run_model(net, x_test, y_test):
-    gen = raw_generator_stereo(x_test, y_test, noise=0, shift=0.02,no_shift=True,
-                               batch_size=x_test.shape[0], shuffle=False, tone_noise=0)
-    x_test = next(gen)[0]
-    predictions = net.predict(x_test, batch_size=64)
-    loss = net.evaluate(x_test, y_test)
-    print "\nTEST LOSS:", loss
-    view_average_error(np.exp(y_test)-1,np.exp(predictions)-1)
-    for i in range(100, 2000, 110):
-        view_depth_maps(i, x_test[0], np.exp(y_test)-1, np.exp(predictions)-1)
 
 #####################################################
 
