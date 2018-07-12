@@ -16,7 +16,7 @@ from keras import regularizers
 from keras.callbacks import ModelCheckpoint
 from keras.backend import floatx
 from keras.layers import Conv1D, Conv2D, Dense, MaxPooling2D,UpSampling2D, Input
-from keras.layers.core import Flatten, Reshape
+from keras.layers.core import Flatten, Reshape, Lambda
 from keras.models import load_model, Sequential
 from keras.models import Model
 
@@ -53,19 +53,17 @@ def main():
                         help="additive sin wave noise added for augmentation")
 
     parser.add_argument('--predict-closest', dest='predict_closest',
-                        help='learn to predict the 3d position of the closest point',
+                        help=('learn to predict the 3d position of the ' +
+                              'closest point'),
                         default=False, action='store_true')
-    
 
     args = parser.parse_args()
 
-    sets_file = args.data
     from keras.backend.tensorflow_backend import set_session
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
     set_session(tf.Session(config=config))
 
-    
     if args.dir != '':
         train_main(args)
     else:
@@ -86,11 +84,12 @@ def train_main(args):
 
     # Load testing data...
     with h5py.File(args.data, 'r') as sets:
-        x_test = sets['test_da'][:,0:2646,:]/32000.
+        x_test = sets['test_da'][:, 0:2646, :] / 32000.
         if args.predict_closest:
             y_test = sets['test_closest'][:]
         else:
-            y_test = np.log(1. + sets['test_depths'][:].reshape(-1, TARGET_SIZE))
+            y_test = np.log(1. + sets['test_depths'][:].reshape(-1,
+                                                                TARGET_SIZE))
         print y_test.shape
 
     print "loading data..."
@@ -99,42 +98,43 @@ def train_main(args):
         if args.predict_closest:
             y_train = sets['train_closest'][:]
         else:
-            y_train = np.log(1. + sets['train_depths'][:].reshape(-1, TARGET_SIZE))
+            y_train = np.log(1. + sets['train_depths'][:].reshape(-1,
+                                                                  TARGET_SIZE))
         
     print "building and training model..."
-    model = build_and_train_model(x_train, y_train,
-                                  args.dir, args.lr,
-                                  args.lr_reduce_every,
-                                  args.epochs, args.random_shift, args.white_noise,
-                                  args.tone_noise, args.predict_closest)
+    model = build_and_train_model(x_train, y_train, args.dir, args.lr,
+                                  args.lr_reduce_every, args.epochs,
+                                  args.random_shift, args.white_noise,
+                                  args.tone_noise,
+                                  args.predict_closest)
     run_model(model, x_test, y_test)
 
 
 def test_main(args):
     # Load testing data...
     with h5py.File(args.data, 'r') as sets:
-        x_test = sets['test_da'][:,0:2646,:]/32000.
+        x_test = sets['test_da'][:, 0:2646, :] / 32000.
         images = sets['test_rgb'][:]
         if args.predict_closest:
             y_test = sets['test_closest'][:]
         else:
-            y_test = np.log(1. + sets['test_depths'][:].reshape(-1, TARGET_SIZE))
+            y_test = np.log(1. + sets['test_depths'][:].reshape(-1,
+                                                                TARGET_SIZE))
 
     print "loading model..."
     model = load_model(args.test_model,
-                       custom_objects={'adjusted_mse':adjusted_mse})
+                       custom_objects={'adjusted_mse':adjusted_mse,"tf": tf})
     model.get_layer(name='model_1').summary()
     model.summary()
 
     gen = raw_generator(x_test, y_test, noise=0,
-                        shift=args.random_shift ,no_shift=True,
+                        shift=args.random_shift, no_shift=True,
                         batch_size=x_test.shape[0], shuffle=False,
                         tone_noise=0)
     x_test = next(gen)[0]
     predictions = model.predict(x_test, batch_size=64)
     loss = model.evaluate(x_test, y_test)
     print "\nTEST LOSS:", loss
-
 
     plot_1d_convolutions(model)
 
@@ -155,11 +155,11 @@ def test_main(args):
 
 def view_closest(y_test, predictions, images):
     from mpl_toolkits.mplot3d import Axes3D
-    
-    for i in range(0,y_test.shape[0], 10):
+
+    for i in range(0, y_test.shape[0], 10):
         fig = plt.figure()
         fig.add_subplot(121)
-        plt.imshow(images[i,...], interpolation='none')
+        plt.imshow(images[i, ...], interpolation='none')
         ax = fig.add_subplot(122, projection='3d')
         ax.set_xlim(-1.1, 1.1)
         ax.set_ylim(.3, 2)
@@ -179,7 +179,7 @@ def plot_1d_convolutions(model):
     for i in range(120):
         plt.subplot(16, 8, i+1)
         plt.plot(W[:,0,i])
-    
+
     plt.show()
     print W.shape
 
@@ -259,18 +259,17 @@ def validation_split_by_chunks(x_train, y_train, split=.1, chunk_size=200):
     """
     val_size = int(split * x_train.shape[0])
     chunks = val_size // chunk_size
-    val_size = chunk_size * chunks;
+    val_size = chunk_size * chunks
     train_size = x_train.shape[0] - val_size
-    chunk_offest = chunks // x_train.shape[0]
     block_size = x_train.shape[0] // chunks
     train_chunk_size = block_size - chunk_size
-    
+
     x_val = np.empty([val_size] + list(x_train.shape[1::]))
     y_val = np.empty([val_size] + list(y_train.shape[1::]))
 
     x_train_out = np.empty([train_size] + list(x_train.shape[1::]))
     y_train_out = np.empty([train_size] + list(y_train.shape[1::]))
-    
+
     for i in range(chunks):
         # indices in the original data:
         block_start = i * block_size
@@ -279,10 +278,10 @@ def validation_split_by_chunks(x_train, y_train, split=.1, chunk_size=200):
         # indices in the validation set:
         start = i * chunk_size
         end = start + chunk_size
-        
+
         x_val[start:end, ...] = x_train[block_start:chunk_end, ...]
         y_val[start:end, ...] = y_train[block_start:chunk_end, ...]
-                     
+
         # indices in the original data:
         train_start = chunk_end
         train_end = block_start + block_size
@@ -290,7 +289,7 @@ def validation_split_by_chunks(x_train, y_train, split=.1, chunk_size=200):
         # indices in the train set:
         start = i * train_chunk_size
         end = start + train_chunk_size
-        
+
         x_train_out[start:end, ...] = x_train[train_start:train_end, ...]
         y_train_out[start:end, ...] = y_train[train_start:train_end, ...]
 
@@ -308,22 +307,22 @@ def build_and_train_model(x_train, y_train, model_folder, lr,
                           tone_noise, predict_closest):
 
     L2 = 0#.00001
-    validation_split = .1
     batch_size = 64
 
-    x_val, y_val, x_train, y_train = validation_split_by_chunks(x_train, y_train)
+    x_val, y_val, x_train, y_train = validation_split_by_chunks(x_train,
+                                                                y_train)
 
-    train_gen = raw_generator(x_train, y_train, batch_size=batch_size, shift=shift,
-                              noise=white_noise, shuffle=True, tone_noise=tone_noise)
+    train_gen = raw_generator(x_train, y_train, batch_size=batch_size,
+                              shift=shift, noise=white_noise,
+                              shuffle=True, tone_noise=tone_noise)
 
-    val_gen = raw_generator(x_val, y_val,
-                            batch_size=batch_size, shift=shift,
-                            no_shift=True, noise=.00,
+    val_gen = raw_generator(x_val, y_val, batch_size=batch_size,
+                            shift=shift, no_shift=True, noise=.00,
                             tone_noise=0)
 
     x_sample, _ = train_gen.next()
     input_shape = x_sample[0].shape
-   
+
     net = build_model(input_shape, L2, predict_closest)
 
     adam = keras.optimizers.Adam(lr=lr, beta_1=0.9, beta_2=0.999,
@@ -402,12 +401,13 @@ def build_model(input_shape, L2, predict_closest=False):
     
         x = Reshape((20, 15, 2))(x)
         x = UpSampling2D(size=2)(x) # 4x40x30
-        
+        x = Lambda(add_coords)(x)
         x = Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
                    kernel_regularizer=regularizers.l2(L2))(x)
+        x = Lambda(add_coords)(x)
         x = Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
-                   kernel_regularizer=regularizers.l2(L2))(x)
-        
+                   kernel_regularizer=regularizers.l2(L2))(x)        
+        x = Lambda(add_coords)(x)
         x = Conv2D(1, (3,3), strides=(1,1), activation='linear',padding='same')(x)
         x = Flatten()(x)
     
@@ -419,6 +419,42 @@ def build_model(input_shape, L2, predict_closest=False):
 
 
 
+
+######################################################
+
+def add_coords(input_tensor):
+    batch_size_tensor = tf.shape(input_tensor)[0]
+    x_size = input_tensor.get_shape()[1].value
+    y_size = input_tensor.get_shape()[2].value
+
+    batch_size_tensor = tf.shape(input_tensor)[0]
+    xx_ones = tf.ones([batch_size_tensor, x_size], dtype=tf.int32)
+    xx_ones = tf.expand_dims(xx_ones, -1)
+    xx_range = tf.tile(tf.expand_dims(tf.range(y_size), 0),
+                       [batch_size_tensor, 1])
+    xx_range = tf.expand_dims(xx_range, 1)
+    xx_channel = tf.matmul(xx_ones, xx_range)
+    xx_channel = tf.expand_dims(xx_channel, -1)
+    yy_ones = tf.ones([batch_size_tensor, y_size],
+                      dtype=tf.int32)
+    yy_ones = tf.expand_dims(yy_ones, 1)
+    yy_range = tf.tile(tf.expand_dims(tf.range(x_size), 0),
+                       [batch_size_tensor, 1])
+    yy_range = tf.expand_dims(yy_range, -1)
+    yy_channel = tf.matmul(yy_range, yy_ones)
+    yy_channel = tf.expand_dims(yy_channel, -1)
+    xx_channel = tf.cast(xx_channel, 'float32') / (x_size - 1.0)
+    yy_channel = tf.cast(yy_channel, 'float32') / (y_size - 1.0)
+    xx_channel = xx_channel*2 - 1
+    yy_channel = yy_channel*2 - 1
+    ret = tf.concat([input_tensor,
+                     xx_channel,
+                     yy_channel], axis=-1)
+    return ret
+
+    
+    
+
 ######################################################
 
 class LRReducer(keras.callbacks.LearningRateScheduler):
@@ -427,7 +463,7 @@ class LRReducer(keras.callbacks.LearningRateScheduler):
         super(LRReducer, self).__init__(self.schedule, verbose)
         self.reduce_every = reduce_every
         self.reduce_by = reduce_by
-        
+
 
     def schedule(self, epoch, lr):
         if epoch != 0 and (epoch % self.reduce_every) == 0:
