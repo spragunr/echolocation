@@ -16,7 +16,7 @@ from keras import regularizers
 from keras.callbacks import ModelCheckpoint
 from keras.backend import floatx
 from keras.layers import Conv1D, Conv2D, Dense, MaxPooling2D,UpSampling2D, Input
-from keras.layers.core import Flatten, Reshape, Lambda
+from keras.layers.core import Flatten, Reshape
 from keras.models import load_model, Sequential
 from keras.models import Model
 
@@ -84,7 +84,7 @@ def train_main(args):
 
     # Load testing data...
     with h5py.File(args.data, 'r') as sets:
-        x_test = sets['test_da'][:, 0:2646, :] / 32000.
+        x_test = sets['test_da'][:, 0:2646, :] / 32000.0
         if args.predict_closest:
             y_test = sets['test_closest'][:]
         else:
@@ -94,7 +94,7 @@ def train_main(args):
 
     print "loading data..."
     with h5py.File(args.data, 'r') as sets:
-        x_train = sets['train_da'][:, 0:2646, :]/32000.
+        x_train = sets['train_da'][:, 0:2646, :]/32000.0
         if args.predict_closest:
             y_train = sets['train_closest'][:]
         else:
@@ -113,7 +113,7 @@ def train_main(args):
 def test_main(args):
     # Load testing data...
     with h5py.File(args.data, 'r') as sets:
-        x_test = sets['test_da'][:, 0:2646, :] / 32000.
+        x_test = sets['test_da'][:, 0:2646, :] / 32000.0
         images = sets['test_rgb'][:]
         if args.predict_closest:
             y_test = sets['test_closest'][:]
@@ -123,7 +123,7 @@ def test_main(args):
 
     print "loading model..."
     model = load_model(args.test_model,
-                       custom_objects={'adjusted_mse':adjusted_mse,"tf": tf})
+                       custom_objects={'adjusted_mse':adjusted_mse})
     model.get_layer(name='model_1').summary()
     model.summary()
 
@@ -151,7 +151,7 @@ def test_main(args):
         view_average_error(np.exp(y_test)-1,np.exp(predictions)-1)
         for i in range(100, 2000, 110):
             view_depth_maps(i, x_test[0], np.exp(y_test)-1,
-                            np.exp(predictions)-1)
+                            np.exp(predictions)-1, images)
 
 def view_closest(y_test, predictions, images):
     from mpl_toolkits.mplot3d import Axes3D
@@ -219,8 +219,8 @@ def raw_generator(x_train, y_train, batch_size=64,
         if tone_noise > 0:
             t = np.linspace(0, result_length /44100., result_length)
             for i in range(batch_size):
-                # max frequency about 8000hz:
-                pitch = np.random.random() * 115.0 + 20 # midi pitch
+                #pitch = np.random.random() * 115.0 + 20 # midi pitch
+                pitch = np.random.random() * 88 + 20 # midi pitch max (c8)
                 amp = np.random.random() * tone_noise
                 #people.sju.edu/~rhall/SoundingNumber/pitch_and_frequency.pdf 
                 freq = 440 * 2**((pitch - 69)/12.)
@@ -233,6 +233,8 @@ def raw_generator(x_train, y_train, batch_size=64,
         # Random multiplier for all samples...
         x_data_left *= (1. + np.random.randn(*x_data_left.shape) * noise)
         x_data_right *= (1. + np.random.randn(*x_data_right.shape) * noise)
+        #x_data_left += np.random.randn(*x_data_left.shape) * noise
+        #x_data_right += np.random.randn(*x_data_right.shape) * noise
 
         y_data = y_train[batch_index:batch_index + batch_size, ...]
 
@@ -401,13 +403,10 @@ def build_model(input_shape, L2, predict_closest=False):
     
         x = Reshape((20, 15, 2))(x)
         x = UpSampling2D(size=2)(x) # 4x40x30
-        x = Lambda(add_coords)(x)
         x = Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
                    kernel_regularizer=regularizers.l2(L2))(x)
-        x = Lambda(add_coords)(x)
         x = Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
                    kernel_regularizer=regularizers.l2(L2))(x)        
-        x = Lambda(add_coords)(x)
         x = Conv2D(1, (3,3), strides=(1,1), activation='linear',padding='same')(x)
         x = Flatten()(x)
     
@@ -416,44 +415,6 @@ def build_model(input_shape, L2, predict_closest=False):
     net = Model(inputs=[input_audio_left, input_audio_right], outputs=x)
     return net
 
-
-
-
-
-######################################################
-
-def add_coords(input_tensor):
-    batch_size_tensor = tf.shape(input_tensor)[0]
-    x_size = input_tensor.get_shape()[1].value
-    y_size = input_tensor.get_shape()[2].value
-
-    batch_size_tensor = tf.shape(input_tensor)[0]
-    xx_ones = tf.ones([batch_size_tensor, x_size], dtype=tf.int32)
-    xx_ones = tf.expand_dims(xx_ones, -1)
-    xx_range = tf.tile(tf.expand_dims(tf.range(y_size), 0),
-                       [batch_size_tensor, 1])
-    xx_range = tf.expand_dims(xx_range, 1)
-    xx_channel = tf.matmul(xx_ones, xx_range)
-    xx_channel = tf.expand_dims(xx_channel, -1)
-    yy_ones = tf.ones([batch_size_tensor, y_size],
-                      dtype=tf.int32)
-    yy_ones = tf.expand_dims(yy_ones, 1)
-    yy_range = tf.tile(tf.expand_dims(tf.range(x_size), 0),
-                       [batch_size_tensor, 1])
-    yy_range = tf.expand_dims(yy_range, -1)
-    yy_channel = tf.matmul(yy_range, yy_ones)
-    yy_channel = tf.expand_dims(yy_channel, -1)
-    xx_channel = tf.cast(xx_channel, 'float32') / (x_size - 1.0)
-    yy_channel = tf.cast(yy_channel, 'float32') / (y_size - 1.0)
-    xx_channel = xx_channel*2 - 1
-    yy_channel = yy_channel*2 - 1
-    ret = tf.concat([input_tensor,
-                     xx_channel,
-                     yy_channel], axis=-1)
-    return ret
-
-    
-    
 
 ######################################################
 
@@ -498,7 +459,7 @@ def view_average_error(ytrue, ypred):
 
 #####################################################
 
-def view_depth_maps(index, xtest, ytrue, ypred):
+def view_depth_maps(index, xtest, ytrue, ypred, images):
     all_error = ypred-ytrue
     avg_error = np.mean(all_error)
     stdev = np.std(all_error)
@@ -532,21 +493,25 @@ def view_depth_maps(index, xtest, ytrue, ypred):
             min_depth = 300
             max_depth = 7000#1800
 
-            ax0 = plt.subplot(10,4,j*4 + 1)
+            ax0 = plt.subplot(10,5,j*5 + 1)
             audio_plot = plt.plot(xtest[index,...])
             ax0.set_title("Audio")
+            
+            axi = plt.subplot(10,5,j*5 + 2)
+            true_map = plt.imshow(images[index,...],   interpolation='none')
+            axi.set_title("Audio")
 
-            ax1 = plt.subplot(10,4,j*4 + 2)
+            ax1 = plt.subplot(10,5,j*5 + 3)
             true_map = plt.imshow(true, clim=(min_depth, max_depth),
                                   interpolation='none')
             ax1.set_title("True Depth")
 
-            ax2 = plt.subplot(10,4,j*4 + 3)
+            ax2 = plt.subplot(10,5,j*5 + 4)
             pred_map = plt.imshow(pred, clim=(min_depth, max_depth),
                                   interpolation='none')
             ax2.set_title("Predicted Depth")
 
-            ax3 = plt.subplot(10,4,j*4 + 4)
+            ax3 = plt.subplot(10,5,j*5 + 5)
             error_map = plt.imshow(error, clim=rng, cmap="Greys",
                                    interpolation='none')
             ax3.set_title("Squared Error Map")
