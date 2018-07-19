@@ -15,7 +15,7 @@ import keras.backend as K
 from keras.layers import MaxPooling2D
 from keras.utils import CustomObjectScope
 
-
+from util import raw_generator, adjusted_mse
 
 
 tf.logging.set_verbosity(tf.logging.WARN)
@@ -29,39 +29,22 @@ TARGET_WIDTH = 40
 TARGET_HEIGHT = 30
 TARGET_SIZE = TARGET_HEIGHT * TARGET_WIDTH
 
-class SignedMaxPooling2D(MaxPooling2D):
-
-    # def __init__(self, pool_size=(2, 2), strides=None, padding='valid',
-    #              data_format=None, **kwargs):
-    #     super(SignedMaxPooling2D, self).__init__(pool_size, strides, padding,
-    #                                              data_format, **kwargs)
-
-    def _pooling_function(self, inputs, pool_size, strides,
-                          padding, data_format):
-
-        x_neg = tf.scalar_mul(tf.constant(-1.0), inputs)
-        x_neg_pool = K.pool2d(x_neg, pool_size, strides,
-                              padding,pool_mode='max')
-        x_pool = K.pool2d(inputs, pool_size, strides,
-                              padding,pool_mode='max')
-        gr = K.greater(x_neg_pool, x_pool)
-        
-        output = tf.where(gr,
-                          tf.scalar_mul(tf.constant(-1.0), x_neg_pool),
-                          x_pool)
-        return output
-
 
 def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('data', help="preprocessed training and testing data")
-    parser.add_argument('model_folder',
-                        help="where to store models and results")
+    parser.add_argument('--random-shift', type=float, default=.02,
+                        help="fraction random shift for augmentation")
+
+    parser.add_argument('test-model',  default='',
+                        help="model to test")
+
 
     args = parser.parse_args()
+    print args
 
-    model_file = args.model_folder + "/model.h5"
+    model_file  = getattr( args, 'test-model' ) 
     sets_file = args.data
 
     from keras.backend.tensorflow_backend import set_session
@@ -76,12 +59,93 @@ def main():
         y_test = np.log(1. + sets['test_depths'][:].reshape(-1, TARGET_SIZE))
 
     print "loading model..."
-    model = load_model(model_file, custom_objects={'adjusted_mse':adjusted_mse,
-                                                   'SignedMaxPooling2D':SignedMaxPooling2D})
-    plot_1d_convolutions(model)
-        
+    model = load_model(model_file, custom_objects={'adjusted_mse':adjusted_mse})
     model.summary()
-    loss = run_model(model, x_test, y_test)
+
+    plot_1d_convolutions(model)
+
+    gen = raw_generator(x_test, y_test, noise=0,
+                        shift=args.random_shift, no_shift=True,
+                        batch_size=x_test.shape[0], shuffle=False,
+                        tone_noise=0)
+    x_test = next(gen)[0]
+    predictions = model.predict(x_test, batch_size=64)
+    loss = model.evaluate(x_test, y_test)
+    print "\nTEST LOSS:", loss
+    calc_losses(predictions, y_test)
+
+
+def calc_losses(predictions, y_test):
+
+    print y_test.shape
+    ok_indices = y_test != 0
+
+
+
+    # network predictions
+    predictions = predictions[ok_indices]
+    predictions = (np.exp(predictions)-1) / 1000.0
+    
+    # predictions based on overall data-set mean
+    y_test_nans = np.array(y_test)
+    y_test_nans[y_test == 0] = np.nan
+    mean = np.nanmean(y_test_nans, axis=0)
+    mean = np.exp(mean) - 1
+    means = np.tile(mean,(y_test.shape[0],1))
+    means = means[ok_indices] / 1000.0
+    print means.shape
+
+    # predictions based on per-image ground truth mean
+    y_test_nans = np.array(y_test)
+    y_test_nans[y_test == 0] = np.nan
+    mean = np.nanmean(y_test_nans, axis=1)
+    print mean.shape
+    mean = np.exp(mean) - 1
+    image_means = np.tile(mean,(y_test.shape[1], 1)).T
+    print means.shape
+    image_means = image_means[ok_indices] / 1000.0
+
+    # target values
+    y_test = y_test[ok_indices]
+    y_test = (np.exp(y_test)-1) / 1000.0
+
+    
+    print "\nL2 Model Predictions"
+    calc_delta_losses(predictions, y_test)
+    print "\nMean Data set Predictions"
+    calc_delta_losses(means, y_test)
+    print "\nPer-image mean predictions"
+    calc_delta_losses(image_means, y_test)
+   
+
+    
+
+def calc_delta_losses(predictions, y_test):
+
+    #Threshold
+    print "Error threshold"
+
+    deltas = np.maximum(predictions / y_test, y_test / predictions)
+    total = float(deltas.size)
+    d1 = np.count_nonzero(deltas < 1.25) / total
+    d2 = np.count_nonzero(deltas < 1.25**2) / total
+    d3 = np.count_nonzero(deltas < 1.25**3) / total
+    print d1, d2, d3
+
+
+    abs_error = np.sum(np.abs(predictions - y_test)/ y_test) / total
+    print("abs_error: {:.3f}".format(abs_error))
+
+    sqr_error = np.sum((predictions - y_test)**2/ y_test) / total
+    print("sqr relative difference: {:.3f}".format(sqr_error))
+
+    rmse = np.sqrt(np.sum((predictions - y_test)**2) / total)
+    print("RMSE (linear): {:.3f}".format(rmse))
+
+    rmse_log = np.sqrt(np.sum((np.log(predictions) - np.log(y_test))**2) /
+                       total)
+    print("RMSE (log): {:.3f}".format(rmse_log))
+
 
 
     
@@ -90,26 +154,26 @@ def main():
 
 def plot_1d_convolutions(model):
 
-    print model.layers[0].get_weights()[1]
-    W = model.layers[0].get_weights()[0]
+    layer = model.get_layer(name='model_1').get_layer('conv1d_1')
+    W = layer.get_weights()[0]
+    print W.shape
+    num_convolutions = W.shape[2]
     fs = 41000
-    peaks = np.empty(80)
+    peaks = np.empty(num_convolutions)
 
     # find peak frequency repsponses
-    for i in range(80):
+    for i in range(num_convolutions):
         w, h = scipy.signal.freqz(W[:,0,i], 1.0)
         f = fs * w / (2*np.pi)
         peaks[i] = f[np.argmax(h)]
     plt.hist(peaks, 20)
     plt.show()
-
-
     
-    for i in range(80):
+    for i in range(num_convolutions):
         plt.subplot(16, 8, i+1)
         plt.plot(W[:,0,i])
     plt.figure()
-    for i in range(80):
+    for i in range(num_convolutions):
         plt.subplot(16, 8, i+1)
         w, h = scipy.signal.freqz(W[:,0,i], 1.0)
         f = fs * w / (2*np.pi)
@@ -120,54 +184,8 @@ def plot_1d_convolutions(model):
 
 
 ######################################################
-######################################################
-
-def raw_generator(x_train, y_train, batch_size=64, shift=.01,
-                  noise=.05, no_shift=False, shuffle=True):
-    num_samples = x_train.shape[0]
-    sample_length = x_train.shape[1]
-    result_length = int(sample_length * (1 - shift))
-    batch_index = 0
-
-    while True:
-        # Shuffle before each epoch
-        if batch_index == 0 and shuffle:
-            indices = np.random.permutation(x_train.shape[0])
-            np.take(x_train,indices,axis=0,out=x_train)
-            np.take(y_train,indices,axis=0,out=y_train)
-
-        # Randomly crop the audio data...
-        if no_shift:
-            start_ind = np.zeros(batch_size, dtype='int32')
-        else:
-            start_ind = np.random.randint(sample_length - result_length + 1,
-                                          size=batch_size)
-        x_data = np.empty((batch_size, result_length * 2, 1))
-        for i in range(batch_size):
-            x_data[i, 0:result_length, 0] = x_train[batch_index + i,
-                                                    start_ind[i]:start_ind[i] + result_length, 0]
-            x_data[i, result_length::, 0] = x_train[batch_index + i,
-                                                    start_ind[i]:start_ind[i] + result_length, 1]
-
-        # Random multiplier for all samples...
-        x_data *= (1. + np.random.randn(*x_data.shape) * noise)
-
-        y_data = y_train[batch_index:batch_index + batch_size, ...]
-
-        batch_index += batch_size
-
-        if batch_index > (num_samples - batch_size):
-            batch_index = 0
-                       
-        yield x_data, y_data
-    
-
-    
-######################################################
 
 def run_model(net, x_test, y_test):
-    # gen = raw_generator(x_test, y_test, noise=0, no_shift=True,
-    #                     batch_size=x_test.shape[0], shuffle=False)
     gen = raw_generator(x_test, y_test, noise=0, no_shift=True,
                         batch_size=64, shuffle=True)
     x_test = next(gen)[0]
@@ -175,7 +193,10 @@ def run_model(net, x_test, y_test):
 
     inp = net.input             # input placeholder
     # all layer outputs
-    outputs = [layer.output for layer in net.layers]
+    for layer in net.layers:
+        print layer
+    
+    outputs = [layer.get_output_at(0) for layer in net.layers]
     # evaluation function
     functor = K.function([inp]+ [K.learning_phase()], outputs )
 
@@ -205,18 +226,6 @@ def run_model(net, x_test, y_test):
     print "\nTEST LOSS:", loss
     for i in range(100, 2000, 110):
         view_depth_maps(i, x_test, np.exp(y_test)-1, np.exp(predictions)-1)
-
-#####################################################
-
-def adjusted_mse(y_true, y_pred):
-    zero = tf.constant(0, dtype=floatx())
-    ok_entries = tf.not_equal(y_true, zero)
-    safe_targets = tf.where(ok_entries, y_true, y_pred)
-    sqr = tf.square(y_pred - safe_targets)
-    valid = tf.cast(ok_entries, floatx())
-    num_ok = tf.reduce_sum(valid, axis=-1) # count OK entries
-    num_ok = tf.maximum(num_ok, tf.ones_like(num_ok)) # avoid divide by zero
-    return tf.reduce_sum(sqr, axis=-1) / num_ok
 
 
 def view_depth_maps(index, xtest, ytrue, ypred):
