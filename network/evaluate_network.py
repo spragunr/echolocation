@@ -15,7 +15,7 @@ import keras.backend as K
 from keras.layers import MaxPooling2D
 from keras.utils import CustomObjectScope
 
-from util import raw_generator, adjusted_mse
+from util import raw_generator, adjusted_mse, berhu
 
 
 tf.logging.set_verbosity(tf.logging.WARN)
@@ -56,10 +56,12 @@ def main():
     print "loading test data..."
     with h5py.File(sets_file, 'r') as sets:
         x_test = sets['test_da'][:, 0:2646, :]/32000.
-        y_test = np.log(1. + sets['test_depths'][:].reshape(-1, TARGET_SIZE))
+        #y_test = np.log(1. + sets['test_depths'][:].reshape(-1, TARGET_SIZE))
+        y_test = sets['test_depths'][:].reshape(-1, TARGET_SIZE) / 1000.0
 
     print "loading model..."
-    model = load_model(model_file, custom_objects={'adjusted_mse':adjusted_mse})
+    model = load_model(model_file, custom_objects={'adjusted_mse':adjusted_mse,
+                                                   'berhu':berhu})
     model.summary()
 
     plot_1d_convolutions(model)
@@ -84,7 +86,7 @@ def calc_losses(predictions, y_test):
 
     # network predictions
     predictions = predictions[ok_indices]
-    predictions = (np.exp(predictions)-1) / 1000.0
+    #predictions = (np.exp(predictions)-1) / 1000.0
     
     # predictions based on overall data-set mean
     y_test_nans = np.array(y_test)
@@ -107,7 +109,7 @@ def calc_losses(predictions, y_test):
 
     # target values
     y_test = y_test[ok_indices]
-    y_test = (np.exp(y_test)-1) / 1000.0
+    #y_test = (np.exp(y_test)-1) / 1000.0
 
     
     print "\nL2 Model Predictions"

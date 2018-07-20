@@ -133,3 +133,33 @@ def adjusted_mse(y_true, y_pred):
     num_ok = tf.reduce_sum(valid, axis=-1) # count OK entries
     num_ok = tf.maximum(num_ok, tf.ones_like(num_ok)) # avoid divide by zero
     return tf.reduce_sum(sqr, axis=-1) / num_ok
+
+def berhu(y_true, y_pred):
+    zero = tf.constant(0, dtype=keras.backend.floatx())
+    ok_entries = tf.not_equal(y_true, zero)
+    safe_targets = tf.where(ok_entries, y_true, y_pred)
+    
+    diffs = y_pred - safe_targets
+    abs_diffs = tf.abs(diffs)
+
+    fifth = tf.constant(1./5., dtype=keras.backend.floatx())
+    c = fifth * tf.reduce_max(abs_diffs)
+    
+    l2_diffs = (tf.square(diffs) + c**2) / (2 * c)
+
+    combined = tf.where(abs_diffs < c, abs_diffs, l2_diffs)
+
+    valid = tf.cast(ok_entries, keras.backend.floatx())
+    num_ok = tf.reduce_sum(valid, axis=-1) # count OK entries
+    num_ok = tf.maximum(num_ok, tf.ones_like(num_ok)) # avoid divide by zero
+    return tf.reduce_sum(combined, axis=-1) / num_ok
+
+def berhu_test():
+    tf.enable_eager_execution()
+    x = np.array(np.random.random((3,5)), dtype='float32')
+    y = np.array(np.random.random((3,5)), dtype='float32')
+    print berhu(x,y)
+    print adjusted_mse(x,y)
+    
+if __name__ == "__main__":
+    berhu_test()

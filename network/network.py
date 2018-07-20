@@ -18,7 +18,7 @@ from keras.layers.core import Flatten, Reshape
 from keras.models import load_model, Sequential
 from keras.models import Model
 
-from util import validation_split_by_chunks, raw_generator, adjusted_mse
+from util import validation_split_by_chunks, raw_generator, adjusted_mse, berhu
 
 tf.logging.set_verbosity(tf.logging.WARN)
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -82,24 +82,15 @@ def train_main(args):
         json.dump(vars(args), f, sort_keys=True,
                   indent=4, separators=(',', ': '))
 
-    # Load testing data...
-    with h5py.File(args.data, 'r') as sets:
-        x_test = sets['test_da'][:, 0:2646, :] / 32000.0
-        if args.predict_closest:
-            y_test = sets['test_closest'][:]
-        else:
-            y_test = np.log(1. + sets['test_depths'][:].reshape(-1,
-                                                                TARGET_SIZE))
-        print y_test.shape
-
     print "loading data..."
     with h5py.File(args.data, 'r') as sets:
         x_train = sets['train_da'][:, 0:2646, :]/32000.0
         if args.predict_closest:
             y_train = sets['train_closest'][:]
         else:
-            y_train = np.log(1. + sets['train_depths'][:].reshape(-1,
-                                                                  TARGET_SIZE))
+            #y_train = np.log(1. + sets['train_depths'][:].reshape(-1,
+            #                                                      TARGET_SIZE))
+            y_train = sets['train_depths'][:].reshape(-1, TARGET_SIZE) / 1000.
         
     print "building and training model..."
     model = build_and_train_model(x_train, y_train, args.dir, args.lr,
@@ -107,7 +98,6 @@ def train_main(args):
                                   args.random_shift, args.white_noise,
                                   args.tone_noise,
                                   args.predict_closest)
-    run_model(model, x_test, y_test)
 
 
 def test_main(args):
@@ -212,7 +202,8 @@ def build_and_train_model(x_train, y_train, model_folder, lr,
 
     adam = keras.optimizers.Adam(lr=lr, beta_1=0.9, beta_2=0.999,
                                  epsilon=1e-08, decay=0.0)
-    net.compile(optimizer=adam, loss=adjusted_mse)
+    #net.compile(optimizer=adam, loss=adjusted_mse)
+    net.compile(optimizer=adam, loss=berhu)
     net.summary()
 
     # Configure callbacks:
