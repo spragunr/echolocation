@@ -15,7 +15,7 @@ import keras.backend as K
 from keras.layers import MaxPooling2D
 from keras.utils import CustomObjectScope
 
-from util import raw_generator, adjusted_mse, berhu
+from util import raw_generator, safe_mse, safe_berhu, safe_l1
 
 
 tf.logging.set_verbosity(tf.logging.WARN)
@@ -57,14 +57,19 @@ def main():
     with h5py.File(sets_file, 'r') as sets:
         x_test = sets['test_da'][:, 0:2646, :]/32000.
         #y_test = np.log(1. + sets['test_depths'][:].reshape(-1, TARGET_SIZE))
-        y_test = sets['test_depths'][:].reshape(-1, TARGET_SIZE) / 1000.0
+        y_test = sets['test_depths'][:] / 1000.0
 
     print "loading model..."
-    model = load_model(model_file, custom_objects={'adjusted_mse':adjusted_mse,
-                                                   'berhu':berhu})
+    model = load_model(model_file,
+                       custom_objects={'safe_mse':safe_mse,
+                                       'safe_berhu':safe_berhu, 'keras':keras,
+                                       "safe_l1":safe_l1})
+
+
     model.summary()
 
     plot_1d_convolutions(model)
+    show_activations(model, x_test, y_test)
 
     gen = raw_generator(x_test, y_test, noise=0,
                         shift=args.random_shift, no_shift=True,
@@ -72,17 +77,16 @@ def main():
                         tone_noise=0)
     x_test = next(gen)[0]
     predictions = model.predict(x_test, batch_size=64)
-    loss = model.evaluate(x_test, y_test)
-    print "\nTEST LOSS:", loss
+    #loss = model.evaluate(x_test, y_test)
+    #print "\nTEST LOSS:", loss
     calc_losses(predictions, y_test)
 
 
 def calc_losses(predictions, y_test):
 
+    #predictions = np.reshape(predictions, (y_test.shape[0],30,40))
     print y_test.shape
     ok_indices = y_test != 0
-
-
 
     # network predictions
     predictions = predictions[ok_indices]
@@ -92,20 +96,21 @@ def calc_losses(predictions, y_test):
     y_test_nans = np.array(y_test)
     y_test_nans[y_test == 0] = np.nan
     mean = np.nanmean(y_test_nans, axis=0)
-    mean = np.exp(mean) - 1
-    means = np.tile(mean,(y_test.shape[0],1))
-    means = means[ok_indices] / 1000.0
+    #mean = np.exp(mean) - 1
+    means = np.tile(mean,(y_test.shape[0],1,1))
+    means = means[ok_indices] 
     print means.shape
 
     # predictions based on per-image ground truth mean
     y_test_nans = np.array(y_test)
     y_test_nans[y_test == 0] = np.nan
-    mean = np.nanmean(y_test_nans, axis=1)
-    print mean.shape
-    mean = np.exp(mean) - 1
-    image_means = np.tile(mean,(y_test.shape[1], 1)).T
+    mean = np.nanmean(y_test_nans, axis=(1,2))
+    print "A",mean.shape
+    mean = mean.reshape(mean.shape[0], 1,1)
+    #mean = np.exp(mean) - 1
+    image_means = np.tile(mean,(1, y_test.shape[1],y_test.shape[2]))
     print means.shape
-    image_means = image_means[ok_indices] / 1000.0
+    image_means = image_means[ok_indices]
 
     # target values
     y_test = y_test[ok_indices]
@@ -187,23 +192,54 @@ def plot_1d_convolutions(model):
 
 ######################################################
 
-def run_model(net, x_test, y_test):
+def show_activations(net, x_test, y_test):
     gen = raw_generator(x_test, y_test, noise=0, no_shift=True,
                         batch_size=64, shuffle=True)
     x_test = next(gen)[0]
+    print "X", type(x_test)
     predictions = net.predict(x_test, batch_size=64)
+    print predictions
 
     inp = net.input             # input placeholder
+
+    channel_input = net.input[0]
+
+    channel_outputs = [layer.get_output_at(0) for layer in net.layers[2].layers]
+    print channel_outputs
+    
+    functor = K.function([net.layers[2].get_input_at(0)]+ [K.learning_phase()],
+                         channel_outputs)
+
+    left_outs = functor([x_test[0]]+ [1.])
+    right_outs = functor([x_test[1]]+ [1.])
+    for output in channel_outputs:
+        print output
+    #print left_outs
+    #print right_outs
+
+    for i in range(64):
+        plt.subplot(1,2,1)
+        plt.imshow(left_outs[3][i,:,:,0].T, interpolation='none')
+        plt.subplot(1,2,2)
+        plt.imshow(right_outs[3][i,:,:,0].T, interpolation='none')
+        plt.show()
+    
+    return
+    
+    print "INPUT", type(net.input)
     # all layer outputs
+    print net.layers[2].layers
+    print net.layers
     for layer in net.layers:
         print layer
     
     outputs = [layer.get_output_at(0) for layer in net.layers]
     # evaluation function
-    functor = K.function([inp]+ [K.learning_phase()], outputs )
-
+    functor = K.function(inp+ [K.learning_phase()], outputs )
+    print "FUNCTOR", functor
     # Testing
-    layer_outs = functor([x_test, 1.])
+    print x_test[0].shape
+    layer_outs = functor(x_test+ [1.])
     print layer_outs[2].shape
     for i in range(64):
         plt.imshow(layer_outs[2][i,:,:,0].T, interpolation='none')

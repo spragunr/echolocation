@@ -14,11 +14,12 @@ import keras.layers as layers
 from keras import regularizers
 from keras.callbacks import ModelCheckpoint
 from keras.layers import Conv1D, Conv2D, Dense, MaxPooling2D,UpSampling2D, Input
-from keras.layers.core import Flatten, Reshape
+from keras.layers.core import Flatten, Reshape, Lambda
 from keras.models import load_model, Sequential
 from keras.models import Model
 
-from util import validation_split_by_chunks, raw_generator, adjusted_mse, berhu
+from util import validation_split_by_chunks, raw_generator
+from util import safe_mse, safe_berhu, safe_l1
 
 tf.logging.set_verbosity(tf.logging.WARN)
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -45,6 +46,9 @@ def main():
     parser.add_argument('--test-model',  default='',
                         help="model to test")
 
+    parser.add_argument('--loss',  default='l2',
+                        help="loss function. One of l2, l1, berhu")
+
     parser.add_argument('--random-shift', type=float, default=.02,
                         help="fraction random shift for augmentation")
     parser.add_argument('--white-noise', type=float, default=0,
@@ -65,6 +69,7 @@ def main():
     set_session(tf.Session(config=config))
 
     if args.dir != '':
+    
         train_main(args)
     else:
         test_main(args)
@@ -88,16 +93,21 @@ def train_main(args):
         if args.predict_closest:
             y_train = sets['train_closest'][:]
         else:
-            #y_train = np.log(1. + sets['train_depths'][:].reshape(-1,
-            #                                                      TARGET_SIZE))
-            y_train = sets['train_depths'][:].reshape(-1, TARGET_SIZE) / 1000.
+            y_train = sets['train_depths'][:] / 1000.
         
     print "building and training model..."
+    if args.loss == 'l2':
+        loss_function = safe_mse
+    elif args.loss == 'l1':
+        loss_function = safe_l1
+    elif args.loss == 'berhu':
+        loss_function = safe_berhu
     model = build_and_train_model(x_train, y_train, args.dir, args.lr,
                                   args.lr_reduce_every, args.epochs,
                                   args.random_shift, args.white_noise,
                                   args.tone_noise,
-                                  args.predict_closest)
+                                  args.predict_closest,
+                                  loss_function)
 
 
 def test_main(args):
@@ -108,12 +118,12 @@ def test_main(args):
         if args.predict_closest:
             y_test = sets['test_closest'][:]
         else:
-            y_test = np.log(1. + sets['test_depths'][:].reshape(-1,
-                                                                TARGET_SIZE))
-
+            y_test = sets['test_depths'][:] / 1000.0
+                            
     print "loading model..."
     model = load_model(args.test_model,
-                       custom_objects={'adjusted_mse':adjusted_mse})
+                       custom_objects={'safe_mse':safe_mse,'safe_l1':safe_l1,
+                                       'safe_berhu':safe_berhu, 'keras':keras})
     model.get_layer(name='model_1').summary()
     model.summary()
 
@@ -139,8 +149,11 @@ def test_main(args):
         view_closest(y_test, predictions, images)
     else:
         for i in range(100, 2000, 110):
-            view_depth_maps(i, x_test[0], np.exp(y_test)-1,
-                            np.exp(predictions)-1, images)
+            #view_depth_maps(i, x_test[0], np.exp(y_test)-1,
+            #                np.exp(predictions)-1, images)
+
+            view_depth_maps(i, x_test[0], y_test,
+                            predictions, images)
 
 ######################################################
 
@@ -179,7 +192,7 @@ def plot_1d_convolutions(model):
 
 def build_and_train_model(x_train, y_train, model_folder, lr,
                           reduce_every, epochs, shift, white_noise,
-                          tone_noise, predict_closest):
+                          tone_noise, predict_closest, loss_function):
 
     L2 = 0#.00001
     batch_size = 64
@@ -189,7 +202,7 @@ def build_and_train_model(x_train, y_train, model_folder, lr,
 
     train_gen = raw_generator(x_train, y_train, batch_size=batch_size,
                               shift=shift, noise=white_noise,
-                              shuffle=True, tone_noise=tone_noise)
+                              shuffle=True, tone_noise=tone_noise,flip=True)
 
     val_gen = raw_generator(x_val, y_val, batch_size=batch_size,
                             shift=shift, no_shift=True, noise=.00,
@@ -202,8 +215,7 @@ def build_and_train_model(x_train, y_train, model_folder, lr,
 
     adam = keras.optimizers.Adam(lr=lr, beta_1=0.9, beta_2=0.999,
                                  epsilon=1e-08, decay=0.0)
-    #net.compile(optimizer=adam, loss=adjusted_mse)
-    net.compile(optimizer=adam, loss=berhu)
+    net.compile(optimizer=adam, loss=loss_function)
     net.summary()
 
     # Configure callbacks:
@@ -242,6 +254,7 @@ def build_model(input_shape, L2, predict_closest=False):
                   strides=(1), use_bias=True,
                   activation='relu',
                   input_shape=input_shape[1::])
+    
     x = conv(input_audio)
     conv_output_size = conv.output_shape[1]
     x = Reshape((conv_output_size, 125, 1))(x)
@@ -254,6 +267,7 @@ def build_model(input_shape, L2, predict_closest=False):
     out = Conv2D(32, (3,3), strides=(1,1), activation='relu', use_bias=True,
                      kernel_regularizer=regularizers.l2(L2))(x)
     channel_model = Model(input_audio, out)
+    set_conv_1d_weights_chirp(conv)
     input_audio_left = Input(shape=input_shape[1::])
     input_audio_right = Input(shape=input_shape[1::])
 
@@ -275,14 +289,15 @@ def build_model(input_shape, L2, predict_closest=False):
         x = Dense(3, activation='linear')(x)
     else:
     
-        x = Reshape((20, 15, 2))(x)
-        x = UpSampling2D(size=2)(x) # 4x40x30
+        x = Reshape((15, 20, 2))(x)
+        x = UpSampling2D(size=2)(x) 
         x = Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
                    kernel_regularizer=regularizers.l2(L2))(x)
         x = Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
                    kernel_regularizer=regularizers.l2(L2))(x)        
         x = Conv2D(1, (3,3), strides=(1,1), activation='linear',padding='same')(x)
-        x = Flatten()(x)
+        x = Lambda(lambda x : keras.backend.squeeze(x, -1))(x)
+        #x = Flatten()(x)
     
     net = Model(inputs=[input_audio_left, input_audio_right], outputs=x)
     return net
@@ -306,7 +321,44 @@ class LRReducer(keras.callbacks.LearningRateScheduler):
 
 #####################################################
 
+def set_conv_1d_weights_sin(conv):
+    kernel_shape = conv.get_weights()[0].shape
+    bias_shape= conv.get_weights()[1].shape
+    weights = np.zeros(kernel_shape)
+    t = np.linspace(0, kernel_shape[0] /44100., kernel_shape[0])
+    for i in range(kernel_shape[2]):
+        freq = i * (8000.0/kernel_shape[2]) + 8000
+        tone = np.sin(2 * np.pi * freq * t)
+        weights[:,0,i] = tone
+
+    bias_weights = np.zeros(bias_shape)
+    conv.set_weights([weights] + [bias_weights])
+
+def set_conv_1d_weights_chirp(conv):
+    from scipy.signal import chirp
+    kernel_shape = conv.get_weights()[0].shape
+    bias_shape= conv.get_weights()[1].shape
+    conv_length = kernel_shape[0]
+    weights = np.zeros(kernel_shape)
+    t = np.linspace(0, conv_length /44100., conv_length)
+    freq_diff = 2322.0 # diff between start and end of chirp
+    time_diff = conv_length /44100.
+    for i in range(kernel_shape[2]):
+        start_freq = 16000 - i * (8000.0/kernel_shape[2])
+        end_freq = start_freq - freq_diff
+        weights[:,0,i] = chirp(t, start_freq, time_diff, end_freq)
+
+
+    bias_weights = np.zeros(bias_shape)
+    conv.set_weights([weights] + [bias_weights])
+
+
+    
+
+#####################################################
+
 def view_depth_maps(index, xtest, ytrue, ypred, images):
+    ypred = np.reshape(ypred, (ytrue.shape[0], 30,40))
     all_error = ypred-ytrue
     avg_error = np.mean(all_error)
     stdev = np.std(all_error)
@@ -317,19 +369,10 @@ def view_depth_maps(index, xtest, ytrue, ypred, images):
             index = -1
 
             index = np.random.randint(ytrue.shape[0])
-#            while index == -1:
-#                index = np.random.randint(ytrue.shape[0])
-#                if np.sum(ytrue[index] > 7000) + np.sum(ytrue[index] ==0) < 20:
-#                    true = np.reshape(ytrue[index], (12,16))
-#                    pred = np.reshape(ypred[index], (12,16))
-#                else:
-#                    index = -1
-
             print index  
-            true = np.reshape(ytrue[index], (TARGET_HEIGHT,TARGET_WIDTH))
-            pred = np.reshape(ypred[index], (TARGET_HEIGHT,TARGET_WIDTH))
-            #true = np.log( 1 + np.reshape(ytrue[index], (12,16)))
-            #pred = np.log(1 + np.reshape(ypred[index], (12,16)))
+            true = ytrue[index, ...]
+            pred = ypred[index, ...]
+
             error = pred - true
 
 
@@ -337,8 +380,8 @@ def view_depth_maps(index, xtest, ytrue, ypred, images):
             #max_depth = np.max(true)
             #min_depth = np.log(300)
             #max_depth = np.log(10000)
-            min_depth = 300
-            max_depth = 7000#1800
+            min_depth = .5#300
+            max_depth = 7.#7000#1800
 
             ax0 = plt.subplot(10,5,j*5 + 1)
             audio_plot = plt.plot(xtest[index,...])

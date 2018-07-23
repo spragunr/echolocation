@@ -6,8 +6,8 @@ import keras.backend
 
 
 def raw_generator(x_train, y_train, batch_size=64,
-                  shift=.01,no_shift=False, noise=.00,
-                  shuffle=True, tone_noise=.05):
+                  shift=.02,no_shift=False, noise=.00,
+                  shuffle=True, tone_noise=.05, flip=False):
     num_samples = x_train.shape[0]
     sample_length = x_train.shape[1]
     result_length = int(sample_length * (1 - shift))
@@ -29,12 +29,23 @@ def raw_generator(x_train, y_train, batch_size=64,
             
         x_data_left = np.empty((batch_size, result_length, 1))
         x_data_right = np.empty((batch_size, result_length, 1))
+
+        y_data = y_train[batch_index:batch_index + batch_size, ...]
+
+        left_channel = 0
+        right_channel = 1
+        if flip and np.random.random() < .5:
+            left_channel = 1
+            right_channel = 0
+            y_data = y_data[:, : , ::-1, ...]
         
         for i in range(batch_size):
             x_data_left[i, :, 0] = x_train[batch_index + i,
-                                           start_ind[i]:start_ind[i] + result_length, 0]
+                                           start_ind[i]:start_ind[i] + result_length,
+                                           left_channel]
             x_data_right[i, :, 0] = x_train[batch_index + i,
-                                            start_ind[i]:start_ind[i] + result_length, 1]
+                                            start_ind[i]:start_ind[i] + result_length,
+                                            right_channel]
 
         # Add a sin wave with random freqency and phase...
         if tone_noise > 0:
@@ -50,14 +61,14 @@ def raw_generator(x_train, y_train, batch_size=64,
                 x_data_left[i, :, 0] += tone
                 x_data_right[i, :, 0] += tone
 
+
+        
             
         # Random multiplier for all samples...
         x_data_left *= (1. + np.random.randn(*x_data_left.shape) * noise)
         x_data_right *= (1. + np.random.randn(*x_data_right.shape) * noise)
         #x_data_left += np.random.randn(*x_data_left.shape) * noise
         #x_data_right += np.random.randn(*x_data_right.shape) * noise
-
-        y_data = y_train[batch_index:batch_index + batch_size, ...]
 
         batch_index += batch_size
 
@@ -124,17 +135,30 @@ def validation_split_by_chunks(x_train, y_train, split=.1, chunk_size=200):
 
 #####################################################
 
-def adjusted_mse(y_true, y_pred):
+def safe_mse(y_true, y_pred):
+
+    # reshape so that targets can be any shape
+    batch_size = tf.shape(y_true)[0]
+    y_true = tf.reshape(y_true, (batch_size, -1))
+    y_pred = tf.reshape(y_pred, (batch_size, -1))
+    
     zero = tf.constant(0, dtype=keras.backend.floatx())
     ok_entries = tf.not_equal(y_true, zero)
     safe_targets = tf.where(ok_entries, y_true, y_pred)
     sqr = tf.square(y_pred - safe_targets)
+    
     valid = tf.cast(ok_entries, keras.backend.floatx())
     num_ok = tf.reduce_sum(valid, axis=-1) # count OK entries
     num_ok = tf.maximum(num_ok, tf.ones_like(num_ok)) # avoid divide by zero
+    
     return tf.reduce_sum(sqr, axis=-1) / num_ok
 
-def berhu(y_true, y_pred):
+def safe_berhu(y_true, y_pred):
+    # reshape so that targets can be any shape
+    batch_size = tf.shape(y_true)[0]
+    y_true = tf.reshape(y_true, (batch_size, -1))
+    y_pred = tf.reshape(y_pred, (batch_size, -1))
+
     zero = tf.constant(0, dtype=keras.backend.floatx())
     ok_entries = tf.not_equal(y_true, zero)
     safe_targets = tf.where(ok_entries, y_true, y_pred)
@@ -154,12 +178,37 @@ def berhu(y_true, y_pred):
     num_ok = tf.maximum(num_ok, tf.ones_like(num_ok)) # avoid divide by zero
     return tf.reduce_sum(combined, axis=-1) / num_ok
 
+
+def safe_l1(y_true, y_pred):
+    # reshape so that targets can be any shape
+    batch_size = tf.shape(y_true)[0]
+    y_true = tf.reshape(y_true, (batch_size, -1))
+    y_pred = tf.reshape(y_pred, (batch_size, -1))
+
+    zero = tf.constant(0, dtype=keras.backend.floatx())
+    ok_entries = tf.not_equal(y_true, zero)
+    safe_targets = tf.where(ok_entries, y_true, y_pred)
+    
+    diffs = y_pred - safe_targets
+    abs_diffs = tf.abs(diffs)
+
+    valid = tf.cast(ok_entries, keras.backend.floatx())
+    num_ok = tf.reduce_sum(valid, axis=-1) # count OK entries
+    num_ok = tf.maximum(num_ok, tf.ones_like(num_ok)) # avoid divide by zero
+    return tf.reduce_sum(abs_diffs, axis=-1) / num_ok
+
 def berhu_test():
     tf.enable_eager_execution()
-    x = np.array(np.random.random((3,5)), dtype='float32')
-    y = np.array(np.random.random((3,5)), dtype='float32')
-    print berhu(x,y)
-    print adjusted_mse(x,y)
+    x = np.array(np.random.random((3,4,5)), dtype='float32')
+    y = np.array(np.random.random((3,4,5)), dtype='float32')
+    print safe_berhu(x,y)
+    print safe_mse(x,y)
+    print safe_l1(x,y)
+    x = x.reshape(-1, 20)
+    y = y.reshape(-1, 20)
+    print safe_berhu(x,y)
+    print safe_mse(x,y)
+    print safe_l1(x,y)
     
 if __name__ == "__main__":
     berhu_test()
