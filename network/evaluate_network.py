@@ -67,19 +67,20 @@ def main():
 
 
     model.summary()
+    #show_kernel_weights(model)
 
-    plot_1d_convolutions(model)
-    show_activations(model, x_test, y_test)
 
     gen = raw_generator(x_test, y_test, noise=0,
                         shift=args.random_shift, no_shift=True,
                         batch_size=x_test.shape[0], shuffle=False,
                         tone_noise=0)
-    x_test = next(gen)[0]
-    predictions = model.predict(x_test, batch_size=64)
+    x_test_prepped = next(gen)[0]
+    predictions = model.predict(x_test_prepped, batch_size=64)
     #loss = model.evaluate(x_test, y_test)
     #print "\nTEST LOSS:", loss
     calc_losses(predictions, y_test)
+    plot_1d_convolutions(model)
+    show_activations(model, x_test, y_test)
 
 
 def calc_losses(predictions, y_test):
@@ -189,6 +190,25 @@ def plot_1d_convolutions(model):
     plt.show()
     print W.shape
 
+
+######################################################
+
+def show_kernel_weights(net):
+    first_2dconv = net.layers[2].layers[4]
+    W =  first_2dconv.get_weights()[0]
+    rows = cols =  int(np.ceil(np.sqrt(W.shape[3])))
+    mn = np.min(W)
+    mx = np.max(W)
+    for i in range(W.shape[3]):
+        
+        plt.subplot(rows, cols, i + 1)
+        plt.imshow(W[:,:,0,i], interpolation='none',clim=(mn, mx))
+
+    plt.figure()
+
+                    
+    plt.show()
+    
 
 ######################################################
 

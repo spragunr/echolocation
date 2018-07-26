@@ -346,7 +346,7 @@ def set_conv_1d_weights_chirp(conv):
     for i in range(kernel_shape[2]):
         start_freq = 16000 - i * (8000.0/kernel_shape[2])
         end_freq = start_freq - freq_diff
-        weights[:,0,i] = chirp(t, start_freq, time_diff, end_freq)
+        weights[:,0,i] = chirp(t, start_freq, time_diff, end_freq) * .15
 
 
     bias_weights = np.zeros(bias_shape)
