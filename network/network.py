@@ -14,7 +14,7 @@ import keras.layers as layers
 from keras import regularizers
 from keras.callbacks import ModelCheckpoint
 from keras.layers import Conv1D, Conv2D, Dense, MaxPooling2D,UpSampling2D, Input
-from keras.layers.core import Flatten, Reshape, Lambda
+from keras.layers.core import Flatten, Reshape, Permute
 from keras.models import load_model, Sequential
 from keras.models import Model
 
@@ -46,12 +46,12 @@ def main():
     parser.add_argument('--test-model',  default='',
                         help="model to test")
 
-    parser.add_argument('--loss',  default='l2',
+    parser.add_argument('--loss',  default='berhu',
                         help="loss function. One of l2, l1, berhu")
 
     parser.add_argument('--random-shift', type=float, default=.02,
                         help="fraction random shift for augmentation")
-    parser.add_argument('--white-noise', type=float, default=0,
+    parser.add_argument('--white-noise', type=float, default=.05,
                         help="multiplicative noise added for augmentation")
     parser.add_argument('--tone-noise', type=float, default=0,
                         help="additive sin wave noise added for augmentation")
@@ -194,7 +194,7 @@ def build_and_train_model(x_train, y_train, model_folder, lr,
                           reduce_every, epochs, shift, white_noise,
                           tone_noise, predict_closest, loss_function):
 
-    L2 = 0#.00001
+    L2 = 0.0#.00001
     batch_size = 64
 
     x_val, y_val, x_train, y_train = validation_split_by_chunks(x_train,
@@ -211,11 +211,12 @@ def build_and_train_model(x_train, y_train, model_folder, lr,
     x_sample, _ = train_gen.next()
     input_shape = x_sample[0].shape
 
-    net = build_model(input_shape, L2, predict_closest)
+    net = build_model_big(input_shape, L2, predict_closest)
 
-    adam = keras.optimizers.Adam(lr=lr, beta_1=0.9, beta_2=0.999,
-                                 epsilon=1e-08, decay=0.0)
-    net.compile(optimizer=adam, loss=loss_function)
+    #adam = keras.optimizers.Adam(lr=lr, beta_1=0.9, beta_2=0.999,
+    #                             epsilon=1e-08, decay=0.0)
+    sgd = keras.optimizers.SGD(lr=lr, momentum=0.9)
+    net.compile(optimizer=sgd, loss=loss_function)
     net.summary()
 
     # Configure callbacks:
@@ -256,13 +257,16 @@ def build_model(input_shape, L2, predict_closest=False):
                   input_shape=input_shape[1::])
     
     x = conv(input_audio)
-    conv_output_size = conv.output_shape[1]
-    x = Reshape((conv_output_size, 125, 1))(x)
-    x = MaxPooling2D(pool_size=(16, 1), strides=None,
+    x = Permute((2,1))(x)
+    newshape = (conv.output_shape[2], conv.output_shape[1], 1)
+    x = Reshape(newshape)(x)
+    
+
+    x = MaxPooling2D(pool_size=(1, 16), strides=None,
                      padding='valid')(x)
-    x = Conv2D(64, (5,5), strides=(2,5), activation='relu', use_bias=True,
+    x = Conv2D(64, (5,5), strides=(5,2), activation='relu', use_bias=True,
                    kernel_regularizer=regularizers.l2(L2))(x)
-    x = Conv2D(64, (5,5), strides=(2,1), activation='relu', use_bias=True,
+    x = Conv2D(64, (5,5), strides=(1,2), activation='relu', use_bias=True,
                    kernel_regularizer=regularizers.l2(L2))(x)
     out = Conv2D(32, (3,3), strides=(1,1), activation='relu', use_bias=True,
                      kernel_regularizer=regularizers.l2(L2))(x)
@@ -276,14 +280,15 @@ def build_model(input_shape, L2, predict_closest=False):
 
     channel_model.summary()
     
-    merged = keras.layers.concatenate([left_out, right_out], axis=-3)
+    merged = keras.layers.concatenate([left_out, right_out], axis=2)
 
     x = Flatten()(merged)
     x = Dense(600, activation='relu',use_bias=True,
               kernel_regularizer=regularizers.l2(L2))(x)
     x = Dense(600, activation='relu',use_bias=True,
               kernel_regularizer=regularizers.l2(L2))(x)
-    x = Dense(600, activation='relu')(x)
+    x = Dense(600, activation='relu',use_bias=True,
+              kernel_regularizer=regularizers.l2(L2))(x)
 
     if predict_closest:
         x = Dense(3, activation='linear')(x)
@@ -296,8 +301,70 @@ def build_model(input_shape, L2, predict_closest=False):
         x = Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
                    kernel_regularizer=regularizers.l2(L2))(x)        
         x = Conv2D(1, (3,3), strides=(1,1), activation='linear',padding='same')(x)
-        x = Lambda(lambda x : keras.backend.squeeze(x, -1))(x)
-        #x = Flatten()(x)
+        x = Reshape((30,40))(x)
+    
+    net = Model(inputs=[input_audio_left, input_audio_right], outputs=x)
+    return net
+
+def build_model_big(input_shape, L2, predict_closest=False):
+    # First build a model to handle a single channel...
+    input_audio = Input(shape=input_shape[1::])
+
+    conv = Conv1D(125, (256),
+                  strides=(1), use_bias=True,
+                  activation='relu',
+                  input_shape=input_shape[1::])
+    
+    x = conv(input_audio)
+    x = Permute((2,1))(x)
+    newshape = (conv.output_shape[2], conv.output_shape[1], 1)
+    x = Reshape(newshape)(x)
+    
+
+    x = MaxPooling2D(pool_size=(1, 16), strides=None,
+                     padding='valid')(x)
+    x = Conv2D(64, (5,5), strides=(5,2), activation='relu', use_bias=True,
+                   kernel_regularizer=regularizers.l2(L2))(x)
+    x = Conv2D(128, (5,5), strides=(1,2), activation='relu', use_bias=True,
+                   kernel_regularizer=regularizers.l2(L2))(x)
+    x = Conv2D(128, (3,3), strides=(1,1), activation='relu',
+               use_bias=True,padding='same',
+               kernel_regularizer=regularizers.l2(L2))(x)
+    out = Conv2D(32, (3,3), strides=(1,1), activation='relu',
+                 use_bias=True,padding='same',
+                 kernel_regularizer=regularizers.l2(L2))(x)
+    channel_model = Model(input_audio, out)
+    set_conv_1d_weights_chirp(conv)
+    input_audio_left = Input(shape=input_shape[1::])
+    input_audio_right = Input(shape=input_shape[1::])
+
+    left_out = channel_model(input_audio_left)
+    right_out = channel_model(input_audio_right)
+
+    channel_model.summary()
+    
+    merged = keras.layers.concatenate([left_out, right_out], axis=2)
+
+    x = Flatten()(merged)
+    x = Dense(900, activation='relu',use_bias=True,
+              kernel_regularizer=regularizers.l2(L2))(x)
+    x = Dense(900, activation='relu',use_bias=True,
+              kernel_regularizer=regularizers.l2(L2))(x)
+    x = Dense(900, activation='relu',use_bias=True,
+              kernel_regularizer=regularizers.l2(L2))(x)
+
+    if predict_closest:
+        x = Dense(3, activation='linear')(x)
+    else:
+    
+        x = Reshape((15, 20, 3))(x)
+        x = UpSampling2D(size=2)(x) 
+        x = Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
+                   kernel_regularizer=regularizers.l2(L2))(x)
+        x = Conv2D(32, (3,3), strides=(1,1), activation='relu',padding='same',
+                   kernel_regularizer=regularizers.l2(L2))(x)        
+        x = Conv2D(1, (3,3), strides=(1,1), activation='linear',padding='same')(x)
+        x = Reshape((30,40))(x)
     
     net = Model(inputs=[input_audio_left, input_audio_right], outputs=x)
     return net
@@ -334,6 +401,7 @@ def set_conv_1d_weights_sin(conv):
     bias_weights = np.zeros(bias_shape)
     conv.set_weights([weights] + [bias_weights])
 
+    
 def set_conv_1d_weights_chirp(conv):
     from scipy.signal import chirp
     kernel_shape = conv.get_weights()[0].shape
@@ -344,7 +412,8 @@ def set_conv_1d_weights_chirp(conv):
     freq_diff = 2322.0 # diff between start and end of chirp
     time_diff = conv_length /44100.
     for i in range(kernel_shape[2]):
-        start_freq = 16000 - i * (8000.0/kernel_shape[2])
+        start_freq = ((16000 + freq_diff /2.0) -
+                      i * ((8000.0)/kernel_shape[2]))
         end_freq = start_freq - freq_diff
         weights[:,0,i] = chirp(t, start_freq, time_diff, end_freq) * .15
 
@@ -358,6 +427,7 @@ def set_conv_1d_weights_chirp(conv):
 #####################################################
 
 def view_depth_maps(index, xtest, ytrue, ypred, images):
+    np.random.seed(10)
     ypred = np.reshape(ypred, (ytrue.shape[0], 30,40))
     all_error = ypred-ytrue
     avg_error = np.mean(all_error)

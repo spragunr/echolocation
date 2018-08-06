@@ -67,7 +67,7 @@ def main():
 
 
     model.summary()
-    #show_kernel_weights(model)
+    show_kernel_weights(model)
 
 
     gen = raw_generator(x_test, y_test, noise=0,
@@ -97,7 +97,6 @@ def calc_losses(predictions, y_test):
     y_test_nans = np.array(y_test)
     y_test_nans[y_test == 0] = np.nan
     mean = np.nanmean(y_test_nans, axis=0)
-    #mean = np.exp(mean) - 1
     means = np.tile(mean,(y_test.shape[0],1,1))
     means = means[ok_indices] 
     print means.shape
@@ -108,15 +107,12 @@ def calc_losses(predictions, y_test):
     mean = np.nanmean(y_test_nans, axis=(1,2))
     print "A",mean.shape
     mean = mean.reshape(mean.shape[0], 1,1)
-    #mean = np.exp(mean) - 1
     image_means = np.tile(mean,(1, y_test.shape[1],y_test.shape[2]))
     print means.shape
     image_means = image_means[ok_indices]
 
     # target values
     y_test = y_test[ok_indices]
-    #y_test = (np.exp(y_test)-1) / 1000.0
-
     
     print "\nL2 Model Predictions"
     calc_delta_losses(predictions, y_test)
@@ -178,11 +174,11 @@ def plot_1d_convolutions(model):
     plt.show()
     
     for i in range(num_convolutions):
-        plt.subplot(16, 8, i+1)
+        plt.subplot(25, 5, i+1)
         plt.plot(W[:,0,i])
     plt.figure()
     for i in range(num_convolutions):
-        plt.subplot(16, 8, i+1)
+        plt.subplot(25, 5, i+1)
         w, h = scipy.signal.freqz(W[:,0,i], 1.0)
         f = fs * w / (2*np.pi)
         plt.plot(f, np.abs(h))
@@ -194,7 +190,7 @@ def plot_1d_convolutions(model):
 ######################################################
 
 def show_kernel_weights(net):
-    first_2dconv = net.layers[2].layers[4]
+    first_2dconv = net.layers[2].layers[5]
     W =  first_2dconv.get_weights()[0]
     rows = cols =  int(np.ceil(np.sqrt(W.shape[3])))
     mn = np.min(W)
@@ -204,7 +200,6 @@ def show_kernel_weights(net):
         plt.subplot(rows, cols, i + 1)
         plt.imshow(W[:,:,0,i], interpolation='none',clim=(mn, mx))
 
-    plt.figure()
 
                     
     plt.show()
@@ -239,9 +234,15 @@ def show_activations(net, x_test, y_test):
 
     for i in range(64):
         plt.subplot(1,2,1)
-        plt.imshow(left_outs[3][i,:,:,0].T, interpolation='none')
+        plt.imshow(left_outs[4][i,:,:,0], interpolation='none')
         plt.subplot(1,2,2)
-        plt.imshow(right_outs[3][i,:,:,0].T, interpolation='none')
+        plt.imshow(right_outs[4][i,:,:,0], interpolation='none')
+        plt.figure()
+        for j in range(64):
+            plt.subplot(8,8,j+1)
+            plt.imshow(left_outs[5][i,:,:,j], interpolation='none')
+            
+            
         plt.show()
     
     return
