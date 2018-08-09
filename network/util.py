@@ -37,7 +37,11 @@ def raw_generator(x_train, y_train, batch_size=64,
         if flip and np.random.random() < .5:
             left_channel = 1
             right_channel = 0
-            y_data = y_data[:, : , ::-1, ...]
+            if len(y_data.shape) > 2: # depth map
+                y_data = y_data[:, : , ::-1, ...]
+            else: # 3d points
+                y_data[:, 0] *= -1.0
+                
         
         for i in range(batch_size):
             x_data_left[i, :, 0] = x_train[batch_index + i,
@@ -136,12 +140,11 @@ def validation_split_by_chunks(x_train, y_train, split=.1, chunk_size=200):
 #####################################################
 
 def safe_mse(y_true, y_pred):
-
     # reshape so that targets can be any shape
     batch_size = tf.shape(y_true)[0]
     y_true = tf.reshape(y_true, (batch_size, -1))
     y_pred = tf.reshape(y_pred, (batch_size, -1))
-    
+
     zero = tf.constant(0, dtype=keras.backend.floatx())
     ok_entries = tf.not_equal(y_true, zero)
     safe_targets = tf.where(ok_entries, y_true, y_pred)
