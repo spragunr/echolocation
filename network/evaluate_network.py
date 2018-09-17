@@ -6,18 +6,21 @@ import h5py
 import numpy as np
 import numpy.ma as ma
 import scipy.signal
+import sys
 
 import tensorflow as tf
 
 import keras
+import keras.utils
 from keras.models import load_model
 from keras.backend import floatx
 import keras.backend as K
 from keras.layers import MaxPooling2D
 from keras.utils import CustomObjectScope
 
-from util import raw_generator, safe_mse, safe_berhu, safe_l1
-
+from util import raw_generator, safe_mse, safe_berhu, safe_l1, DataGenerator
+from util import l1_ssim, ssim, ssim_multi, berhu_ssim
+from network import chirp_shift
 
 tf.logging.set_verbosity(tf.logging.WARN)
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -61,35 +64,88 @@ def main():
 
     print "loading test data..."
     with h5py.File(sets_file, 'r') as sets:
-        x_test = sets['test_da'][:, 0:2646, :]/32000.
         images = sets['test_rgb'][:]
-        if args.predict_closest:
-            y_test = sets['test_closest'][:]
-        else:
-            y_test = sets['test_depths'][:] / 1000.0
+        audio = sets['test_da'][:] / 32000.
+    h5_audio = 'test_da'
+    if args.predict_closest:
+        h5_depth = 'test_closest'
+    else:
+        h5_depth = 'test_depths'
 
     print "loading model..."
     model = load_model(model_file,
                        custom_objects={'safe_mse':safe_mse,
                                        'safe_berhu':safe_berhu, 'keras':keras,
-                                       "safe_l1":safe_l1})
+                                       "safe_l1":safe_l1, "l1_ssim":l1_ssim,
+                                       "ssim":ssim, "ssim_multi":ssim_multi,
+                                       "berhu_ssim":berhu_ssim, "chirp_shift":chirp_shift})
 
-
+    print "LOADED", model.inputs
     model.summary()
-    show_kernel_weights(model)
 
+    #show_kernel_weights(model)
+    batch_size = 100
+    gen = DataGenerator(args.data, h5_audio, h5_depth,
+                        batch_size=batch_size,
+                        shift=args.random_shift,
+                        no_shift=True, noise=0.0, #shuffle=True,
+                        tone_noise=0.0)
 
-    gen = raw_generator(x_test, y_test, noise=0,
-                        shift=args.random_shift, no_shift=True,
-                        batch_size=x_test.shape[0], shuffle=False,
-                        tone_noise=0)
-    x_test_prepped = next(gen)[0]
-    predictions = model.predict(x_test_prepped, batch_size=64)
+    # gen = raw_generator(x_test,xcr_test, y_test, noise=0,
+    #                     shift=args.random_shift, no_shift=True,
+    #                     batch_size=x_test.shape[0], shuffle=False,
+    #                     tone_noise=0)
+
+    audio_shape = gen[0][0][0].shape[1::]
+    xcr_shape = gen[0][0][2].shape[1::]
+    y_shape = gen[0][1].shape[1::]
+    audio_left = np.empty([images.shape[0]] + list(audio_shape), dtype='float32')
+    audio_right = np.empty([images.shape[0]] + list(audio_shape), dtype='float32')
+    xcr = np.empty([images.shape[0]] + list(xcr_shape), dtype='float32')
+    y_test = np.empty([images.shape[0]] + list(y_shape), dtype='float32')
+
+    # import network
+    # print audio_shape
+    # model = network.build_model(gen[0][0][0].shape, (1,1,1), 0)
+    # model.save('tmp_model.h5')
+    # model = load_model('tmp_model.h5',
+    #                    custom_objects={'safe_mse':safe_mse,
+    #                                    'safe_berhu':safe_berhu,
+    #                                    'keras':keras,
+    #                                    "safe_l1":safe_l1,
+    #                                    "l1_ssim":l1_ssim, "ssim":ssim,
+    #                                    "ssim_multi":ssim_multi,
+    #                                    "berhu_ssim":berhu_ssim,
+    #                                    "chirp_shift":chirp_shift,"tf":tf})
+    # model.compile(optimizer='sgd', loss=safe_berhu)
+    #print "BUILT", model.inputs
+    #model.summary()
+
+    enqueuer = keras.utils.OrderedEnqueuer(gen,
+                                           use_multiprocessing=True)
+    enqueuer.start(workers=12)
+    batch_num = 0
+    for x, y in enqueuer.get():
+        frm = batch_num * batch_size
+        to = (batch_num + 1) * batch_size
+        audio_left[frm:to, ...] = x[0]
+        audio_right[frm:to, ...] = x[1]
+        xcr[frm:to, ...] = x[2]
+        y_test[frm:to, ...] = y
+        if to == images.shape[0]: break
+        batch_num += 1
+        sys.stdout.write( " " * 6 + str(batch_num) + "\r")
+        sys.stdout.flush()
+    enqueuer.stop()
+        
+    predictions = model.predict([audio_left, audio_right])
+    #predictions = model.predict(xcr)
     #loss = model.evaluate(x_test, y_test)
     #print "\nTEST LOSS:", loss
     plot_1d_convolutions(model)
     
-    loss = model.evaluate(x_test_prepped, y_test)
+    loss = model.evaluate([audio_left, audio_right], y_test)
+    #loss = model.evaluate(xcr, y_test)
     print "\nTEST LOSS:", loss
 
     if args.predict_closest:
@@ -102,10 +158,10 @@ def main():
         plt.show()
         view_closest(y_test, predictions, images)
     else:
-        analyze_error(predictions, x_test, y_test, False)
-        view_depth_maps(x_test, y_test, predictions, images)
+        analyze_error(predictions, audio, y_test, False)
+        view_depth_maps(audio, y_test, predictions, images)
         
-    show_activations(model, x_test, y_test)
+    show_activations(model, [audio_left, audio_right], y_test)
 
 
 
@@ -140,7 +196,7 @@ def analyze_error(predictions, x_test, y_test, show_good=True):
     if show_good:
         # Look at the worst results...
         min_depth = .5#300
-        max_depth = 7.#7000#1800
+        max_depth = 9.#7000#1800
 
         sort_indices = np.argsort(losses[5]/mean_losses[5])
         for i in sort_indices:
@@ -151,6 +207,7 @@ def analyze_error(predictions, x_test, y_test, show_good=True):
             plt.imshow(y_test[i,...],
                        interpolation='none',clim=(min_depth, max_depth))
             plt.subplot(133)
+            predictions[i, y_test[i,...]==0] = 0
             plt.imshow(predictions[i,...],
                        interpolation='none',clim=(min_depth, max_depth))
             plt.show()
@@ -162,11 +219,17 @@ def calc_losses(predictions, y_test):
     print "Error threshold"
 
     predictions = predictions.reshape(predictions.shape[0], -1)
+
     y_test = y_test.reshape(y_test.shape[0], -1)
     
     counts = y_test.count(axis=1)
-
-    deltas = ma.maximum(predictions / y_test, y_test / predictions)
+    
+    # There really shouldn't be negative predictions, but they don't
+    # make sense when calculating this error value...
+    no_neg = ma.masked_array(predictions, mask=predictions.mask)
+    no_neg[predictions<0] = 0
+    
+    deltas = ma.maximum(no_neg / y_test, y_test / no_neg)
     
     d1 = ma.sum(deltas < 1.25, dtype='float', axis=1) / counts
     d2 = ma.sum(deltas < 1.25**2, dtype='float', axis=1) / counts
@@ -187,7 +250,6 @@ def calc_losses(predictions, y_test):
     rmse_log = ma.sqrt(np.sum((ma.log(predictions) -
                                ma.log(y_test))**2, axis=1) / counts)
     print("RMSE (log): {:.3f}".format(ma.mean(rmse_log)))
-
 
     print "MIN", np.min(predictions)
     print "MAX", np.max(predictions)
@@ -252,13 +314,6 @@ def show_kernel_weights(net):
 ######################################################
 
 def show_activations(net, x_test, y_test):
-    gen = raw_generator(x_test, y_test, noise=0, no_shift=True,
-                        batch_size=64, shuffle=True)
-    x_test = next(gen)[0]
-    print "X", type(x_test)
-    predictions = net.predict(x_test, batch_size=64)
-    print predictions
-
     inp = net.input             # input placeholder
 
     channel_input = net.input[0]
@@ -269,22 +324,35 @@ def show_activations(net, x_test, y_test):
     functor = K.function([net.layers[2].get_input_at(0)]+ [K.learning_phase()],
                          channel_outputs)
 
-    left_outs = functor([x_test[0]]+ [1.])
-    right_outs = functor([x_test[1]]+ [1.])
+    left_outs = functor([x_test[0][0:100,...]]+ [1.])
+    right_outs = functor([x_test[1][0:100,...]]+ [1.])
     for output in channel_outputs:
         print output
     #print left_outs
     #print right_outs
 
     for i in range(64):
-        plt.subplot(1,2,1)
+        plt.subplot(2,1,1)
         plt.imshow(left_outs[4][i,:,:,0], interpolation='none')
-        plt.subplot(1,2,2)
+        plt.subplot(2,1,2)
         plt.imshow(right_outs[4][i,:,:,0], interpolation='none')
         plt.figure()
-        for j in range(64):
-            plt.subplot(8,8,j+1)
-            plt.imshow(left_outs[5][i,:,:,j], interpolation='none')
+
+        plt.subplot(1,2,1)
+        plt.imshow(left_outs[5][i,:,:,0], interpolation='none')
+        plt.subplot(1,2,2)
+        plt.imshow(right_outs[5][i,:,:,0], interpolation='none')
+        plt.figure()
+
+        plt.subplot(1,2,1)
+        plt.imshow(left_outs[6][i,:,:,0], interpolation='none')
+        plt.subplot(1,2,2)
+        plt.imshow(right_outs[6][i,:,:,0], interpolation='none')
+
+        # plt.figure()
+        # for j in range(64):
+        #     plt.subplot(8,8,j+1)
+        #     plt.imshow(left_outs[5][i,:,:,j], interpolation='none')
             
             
         plt.show()
@@ -307,6 +375,7 @@ def view_depth_maps(xtest, ytrue, ypred, images):
             print index  
             true = ytrue[index, ...]
             pred = ypred[index, ...]
+            pred[true==0] = 0
 
             error = pred - true
 
